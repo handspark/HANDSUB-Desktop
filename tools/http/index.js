@@ -1,0 +1,212 @@
+/**
+ * HTTP Request Tool
+ * 다양한 HTTP 메서드, 헤더, 바디 타입 지원
+ */
+const BaseTool = require('../BaseTool');
+const https = require('https');
+const http = require('http');
+
+class HttpTool extends BaseTool {
+  static get meta() {
+    return {
+      id: 'http',
+      name: 'HTTP Request',
+      description: 'HTTP 요청을 전송합니다 (GET, POST, PUT, DELETE, PATCH)',
+      icon: '🌐',
+      category: 'integration',
+      version: '1.0.0'
+    };
+  }
+
+  static get schema() {
+    return [
+      {
+        name: 'url',
+        type: 'text',
+        label: 'URL',
+        placeholder: 'https://api.example.com/endpoint',
+        required: true
+      },
+      {
+        name: 'method',
+        type: 'select',
+        label: 'Method',
+        options: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+        default: 'POST',
+        required: true
+      },
+      {
+        name: 'headers',
+        type: 'keyvalue',
+        label: 'Headers',
+        required: false
+      },
+      {
+        name: 'queryParams',
+        type: 'keyvalue',
+        label: 'Query Parameters',
+        required: false
+      },
+      {
+        name: 'bodyType',
+        type: 'select',
+        label: 'Body Type',
+        options: ['json', 'form', 'raw', 'none'],
+        default: 'json',
+        required: false
+      },
+      {
+        name: 'body',
+        type: 'textarea',
+        label: 'Body 템플릿',
+        placeholder: '{"text": "{{내용}}"}',
+        required: false,
+        hint: '{{필드명}} 형식으로 동적 값 지정',
+        showWhen: { field: 'bodyType', notEquals: 'none' }
+      }
+    ];
+  }
+
+  static get defaults() {
+    return {
+      url: '',
+      method: 'POST',
+      headers: {},
+      queryParams: {},
+      bodyType: 'json',
+      body: ''
+    };
+  }
+
+  static validate(config) {
+    const errors = [];
+
+    if (!config.url) {
+      errors.push('URL is required');
+    } else {
+      try {
+        new URL(config.url);
+      } catch {
+        errors.push('Invalid URL format');
+      }
+    }
+
+    const validMethods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
+    if (config.method && !validMethods.includes(config.method)) {
+      errors.push('Invalid HTTP method');
+    }
+
+    return { valid: errors.length === 0, errors };
+  }
+
+  static async execute(config, context = {}) {
+    try {
+      const url = new URL(config.url);
+
+      if (config.queryParams && typeof config.queryParams === 'object') {
+        for (const [key, value] of Object.entries(config.queryParams)) {
+          if (key && value !== undefined) {
+            url.searchParams.append(key, value);
+          }
+        }
+      }
+
+      const isHttps = url.protocol === 'https:';
+      const httpModule = isHttps ? https : http;
+
+      const method = config.method || 'POST';
+      const bodyType = config.bodyType || 'json';
+
+      const headers = { ...config.headers };
+      if (!headers['Content-Type'] && bodyType !== 'none') {
+        headers['Content-Type'] = this.getContentType(bodyType);
+      }
+
+      let body = this.processBody(config, context, bodyType);
+
+      return new Promise((resolve) => {
+        const req = httpModule.request(url, {
+          method,
+          headers,
+          timeout: 10000
+        }, (res) => {
+          let data = '';
+          res.on('data', chunk => data += chunk);
+          res.on('end', () => {
+            resolve({
+              success: res.statusCode >= 200 && res.statusCode < 300,
+              status: res.statusCode,
+              data: this.parseResponse(data, res.headers['content-type'])
+            });
+          });
+        });
+
+        req.on('error', (e) => {
+          resolve({ success: false, error: e.message });
+        });
+
+        req.on('timeout', () => {
+          req.destroy();
+          resolve({ success: false, error: 'Request timeout' });
+        });
+
+        if (body && method !== 'GET') {
+          req.write(typeof body === 'string' ? body : JSON.stringify(body));
+        }
+        req.end();
+      });
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  static getContentType(bodyType) {
+    const types = {
+      json: 'application/json',
+      form: 'application/x-www-form-urlencoded',
+      raw: 'text/plain'
+    };
+    return types[bodyType] || 'application/json';
+  }
+
+  static processBody(config, context, bodyType) {
+    if (bodyType === 'none') return '';
+
+    let body = config.body || '';
+    const { content } = context;
+
+    if (content) {
+      let variables = {};
+      try {
+        variables = JSON.parse(content);
+      } catch {
+        variables = { content };
+      }
+
+      if (body && typeof variables === 'object') {
+        body = this.replaceVariables(body, variables);
+
+        if (body.includes('{{content}}') && variables.content) {
+          body = body.split('{{content}}').join(variables.content);
+        }
+      } else if (!body) {
+        body = JSON.stringify({ text: content });
+      }
+    }
+
+    return body;
+  }
+
+  static parseResponse(data, contentType) {
+    if (contentType && contentType.includes('application/json')) {
+      try {
+        return JSON.parse(data);
+      } catch {
+        return data;
+      }
+    }
+    return data;
+  }
+}
+
+module.exports = HttpTool;

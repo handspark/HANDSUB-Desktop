@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.gravatar.com https://*.wp.com https://*; font-src 'self'; connect-src 'self' http://localhost:* https://* ws://localhost:* wss://*; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none';">
+  <title>설정</title>
+  <link rel="stylesheet" href="settings.css">
+</head>
+<body>
+  <div id="titlebar">
+    <span class="title">설정</span>
+    <button id="closeBtn">✕</button>
+  </div>
+
+  <div id="container">
+    <!-- 왼쪽: 메뉴 목록 -->
+    <nav id="sidebar">
+      <div class="nav-item active" data-section="general">일반</div>
+      <div class="nav-item" data-section="snippets">단축어</div>
+      <div class="nav-item" data-section="tools">도구</div>
+    </nav>
+
+    <!-- 오른쪽: 내용 -->
+    <main id="content">
+      <!-- 단축어 섹션 -->
+      <div class="section" id="section-snippets">
+        <!-- 단축어 목록 -->
+        <div id="snippetList"></div>
+
+        <!-- 단축어 추가/수정 폼 (기본 숨김) -->
+        <div id="snippetForm" class="snippet-form hidden">
+          <div class="form-row">
+            <label>도구</label>
+            <select id="snippetToolSelect">
+              <!-- 동적으로 채워짐 -->
+            </select>
+          </div>
+          <div class="form-row">
+            <label>단축어</label>
+            <input type="text" id="snippetShortcut" placeholder="예: 슬랙알림">
+          </div>
+
+          <!-- 도구별 동적 폼 필드 -->
+          <div id="dynamicFields"></div>
+
+          <div class="form-actions">
+            <button type="button" id="snippetCancel" class="btn-cancel">취소</button>
+            <button type="button" id="snippetSave" class="btn-save">저장</button>
+          </div>
+          <input type="hidden" id="snippetEditId">
+        </div>
+
+        <!-- 추가 버튼 -->
+        <button class="add-btn" id="addSnippetBtn">+ 단축어 추가</button>
+      </div>
+
+      <!-- 도구 섹션 -->
+      <div class="section" id="section-tools">
+        <!-- 도구 목록 페이지 -->
+        <div id="toolsListPage" class="tools-page hidden">
+          <button class="back-btn" id="backFromTools">← 뒤로</button>
+          <div class="tools-list" id="availableToolsList"></div>
+        </div>
+
+        <!-- 기본 도구 설정 페이지 -->
+        <div id="toolsMainPage" class="tools-page">
+          <button class="tool-add-btn" id="openToolsListBtn">+ 도구 추가</button>
+
+          <div class="option">
+            <label>
+              <span>시작 시 자동 실행</span>
+              <input type="checkbox" id="autoLaunch">
+            </label>
+          </div>
+
+          <div class="shortcut-group">
+          <div class="shortcut-row">
+            <label>새 메모</label>
+            <input type="text" id="newMemoShortcutInput" class="shortcut-input" readonly placeholder="클릭 후 단축키 입력">
+          </div>
+          <div class="shortcut-row">
+            <label>열기</label>
+            <input type="text" id="shortcutInput" class="shortcut-input" readonly placeholder="클릭 후 단축키 입력">
+          </div>
+          <div class="shortcut-row">
+            <label>단축어 호출</label>
+            <input type="text" id="triggerKeyInput" class="trigger-input" maxlength="1" placeholder="/">
+          </div>
+          <div class="shortcut-row">
+            <label>단축어 실행</label>
+            <input type="text" id="executeKeyInput" class="shortcut-input" readonly placeholder="Enter">
+          </div>
+        </div>
+        </div>
+      </div>
+
+      <!-- 일반 섹션 (라이센스 + 정보) -->
+      <div class="section active" id="section-general">
+        <!-- 라이센스 미등록 상태 -->
+        <div id="licenseInputState" class="license-state">
+          <div class="license-message">
+            <p>라이센스가 등록되어 있지 않습니다</p>
+            <small>라이센스 키를 입력하여 모든 기능을 사용하세요</small>
+          </div>
+
+          <div class="form-row">
+            <input type="text" id="licenseKeyInput" placeholder="XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX" class="license-input">
+          </div>
+          <button type="button" id="activateLicenseBtn" class="btn-login">라이센스 활성화</button>
+          <small class="form-error hidden" id="licenseError"></small>
+        </div>
+
+        <!-- 라이센스 등록됨 상태 -->
+        <div id="licenseActiveState" class="license-state hidden">
+          <!-- 사용자 프로필 -->
+          <div class="user-profile" id="userProfile">
+            <img src="" alt="프로필" class="profile-avatar" id="userAvatar">
+            <div class="profile-info">
+              <span class="profile-name" id="userName">사용자</span>
+              <span class="profile-email" id="userEmail">-</span>
+            </div>
+            <div class="license-badge active" id="licenseBadge">
+              <span id="licenseTypeText">라이프타임</span>
+            </div>
+          </div>
+
+          <div class="license-info">
+            <div class="license-details">
+              <div class="detail-row" id="expiryRow">
+                <span class="detail-label">만료일</span>
+                <span id="licenseExpiry">-</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">기기</span>
+                <span id="licenseDevices">-</span>
+              </div>
+            </div>
+          </div>
+
+          <button type="button" id="deactivateLicenseBtn" class="btn-logout">라이센스 비활성화</button>
+        </div>
+
+        <!-- 라이센스 만료 상태 -->
+        <div id="licenseExpiredState" class="license-state hidden">
+          <div class="license-expired-message">
+            <p>라이센스가 만료되었습니다</p>
+            <small id="expiredDate">만료일: -</small>
+          </div>
+          <button type="button" id="renewLicenseBtn" class="btn-subscribe">갱신하기</button>
+          <button type="button" id="enterNewLicenseBtn" class="btn-text">다른 라이센스 입력</button>
+        </div>
+
+        <!-- 버전 정보 (하단) -->
+        <div class="version-footer">
+          <span>버전</span>
+          <span class="version" id="versionText">-</span>
+          <button id="checkUpdateBtn" class="check-update-btn hidden">업데이트</button>
+        </div>
+
+        <!-- 업데이트 가능 알림 -->
+        <div id="updateAvailable" class="update-available hidden">
+          <div class="update-info">
+            <span class="update-badge">새 버전</span>
+            <span id="latestVersionText">-</span>
+          </div>
+          <button id="downloadUpdateBtn" class="download-update-btn">업데이트</button>
+        </div>
+
+        <!-- 다운로드 진행 중 -->
+        <div id="updateDownloading" class="update-downloading hidden">
+          <div class="download-info">
+            <span>다운로드 중...</span>
+            <span id="downloadPercent">0%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+        </div>
+
+        <!-- 다운로드 완료 - 재시작 -->
+        <div id="updateReady" class="update-ready hidden">
+          <div class="update-info">
+            <span class="update-badge ready">준비 완료</span>
+            <span>재시작하여 업데이트 적용</span>
+          </div>
+          <button id="restartBtn" class="restart-btn">지금 재시작</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="settings-renderer.js"></script>
+</body>
+</html>

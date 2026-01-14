@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: https:; media-src 'self' file:; font-src 'self'; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none';">
+  <title>handsub</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="titlebar">
+    <div class="titlebar-left">
+      <button id="listBtn" title="메모 목록">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="m2 7h20a1 1 0 0 0 0-2h-20a1 1 0 0 0 0 2z"/><path d="m22 11h-20a1 1 0 0 0 0 2h20a1 1 0 0 0 0-2z"/><path d="m22 17h-20a1 1 0 0 0 0 2h20a1 1 0 0 0 0-2z"/></svg>
+      </button>
+    </div>
+    <div class="titlebar-right">
+      <button id="newBtn" title="새 메모">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+      </button>
+      <button id="closeBtn" title="닫기">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
+  </div>
+  <div id="sidebar">
+    <div id="search-box">
+      <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><path d="M505.749,475.587l-145.6-145.6c28.203-34.837,45.184-79.104,45.184-127.317c0-111.744-90.923-202.667-202.667-202.667S0,90.925,0,202.669s90.923,202.667,202.667,202.667c48.213,0,92.48-16.981,127.317-45.184l145.6,145.6c4.16,4.16,9.621,6.251,15.083,6.251s10.923-2.091,15.083-6.251C514.091,497.411,514.091,483.928,505.749,475.587z M202.667,362.669c-88.235,0-160-71.765-160-160s71.765-160,160-160s160,71.765,160,160S290.901,362.669,202.667,362.669z"/></svg>
+      <input type="text" id="search-input" placeholder="검색...">
+    </div>
+    <div id="memo-list"></div>
+    <div id="sidebar-resize"></div>
+  </div>
+  <div id="editor" contenteditable="true" autofocus></div>
+  <div id="link-previews"></div>
+  <div id="statusbar"></div>
+
+  <!-- 전달 팝업 -->
+  <div id="share-popup" class="share-popup hidden">
+    <div class="share-popup-header">
+      <span>메모 전달</span>
+      <button id="share-popup-close" class="share-popup-close">&times;</button>
+    </div>
+    <div class="share-popup-content">
+      <div class="share-input-row">
+        <input type="email" id="share-email-input" placeholder="이메일 주소 입력..." autocomplete="email">
+        <button id="share-send-btn" class="share-send-btn">전달</button>
+      </div>
+      <!-- 그룹 탭 -->
+      <div id="share-group-tabs" class="share-group-tabs">
+        <button class="share-group-tab active" data-group="all">전체</button>
+        <!-- 동적으로 그룹 탭 추가됨 -->
+        <button class="share-group-tab add-group" title="그룹 추가">+</button>
+      </div>
+      <div id="share-contacts" class="share-contacts">
+        <!-- 최근 연락처가 여기에 표시됨 -->
+      </div>
+    </div>
+    <div id="share-status" class="share-status hidden"></div>
+  </div>
+
+  <!-- 그룹 생성/편집 다이얼로그 -->
+  <div id="group-dialog" class="group-dialog hidden">
+    <div class="group-dialog-content">
+      <div class="group-dialog-header">
+        <span id="group-dialog-title">새 그룹</span>
+        <button id="group-dialog-close" class="share-popup-close">&times;</button>
+      </div>
+      <div class="group-dialog-body">
+        <input type="text" id="group-name-input" placeholder="그룹 이름..." maxlength="20">
+        <div class="group-color-picker">
+          <button class="group-color-btn selected" data-color="#007AFF" style="background:#007AFF"></button>
+          <button class="group-color-btn" data-color="#34C759" style="background:#34C759"></button>
+          <button class="group-color-btn" data-color="#FF9500" style="background:#FF9500"></button>
+          <button class="group-color-btn" data-color="#FF3B30" style="background:#FF3B30"></button>
+          <button class="group-color-btn" data-color="#AF52DE" style="background:#AF52DE"></button>
+        </div>
+      </div>
+      <div class="group-dialog-footer">
+        <button id="group-delete-btn" class="group-delete-btn hidden">삭제</button>
+        <button id="group-save-btn" class="share-send-btn">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="renderer/index.js"></script>
+</body>
+</html>

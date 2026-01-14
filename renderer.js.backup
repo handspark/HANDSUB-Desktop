@@ -1,0 +1,2136 @@
+const editor = document.getElementById('editor');
+const newBtn = document.getElementById('newBtn');
+const closeBtn = document.getElementById('closeBtn');
+const statusbar = document.getElementById('statusbar');
+const listBtn = document.getElementById('listBtn');
+const sidebar = document.getElementById('sidebar');
+const memoList = document.getElementById('memo-list');
+const sidebarResize = document.getElementById('sidebar-resize');
+const searchInput = document.getElementById('search-input');
+
+// 메모 목록과 현재 상태
+let memos = [];
+let currentIndex = -1;
+let currentMemo = null;
+let imagesPath = '';
+let lastSavedContent = ''; // 마지막 저장된 content (diff용)
+
+// 이미지 경로 초기화
+window.api.getImagePath().then(path => {
+  imagesPath = path;
+});
+
+// ===== Editor Content Helpers =====
+
+// 인라인 이벤트 핸들러 제거 (CSP 에러 방지)
+function stripInlineHandlers(html) {
+  if (!html) return '';
+  // onerror="...", onerror='...', onerror=value 형태 제거
+  // 더 강력한 패턴: on으로 시작하는 모든 속성
+  html = html.replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, '');
+  html = html.replace(/\s+on\w+\s*=\s*[^\s>"']+/gi, '');
+  // HTML 엔티티 인코딩된 형태도 제거
+  html = html.replace(/\s+on&#?[a-z0-9]+;\w*\s*=/gi, ' data-removed=');
+  // 이전에 저장된 link-preview, memo-link, link-preview-wrapper 요소들도 제거
+  html = html.replace(/<a[^>]*class="[^"]*link-preview[^"]*"[^>]*>[\s\S]*?<\/a>/gi, '');
+  html = html.replace(/<a[^>]*class="[^"]*memo-link[^"]*"[^>]*>[\s\S]*?<\/a>/gi, '');
+  html = html.replace(/<div[^>]*class="[^"]*link-preview-wrapper[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '');
+  return html;
+}
+
+function getEditorContent() {
+  // contenteditable에서 HTML 컨텐츠 가져오기
+  // 저장 전 인라인 이벤트 핸들러 제거
+  return stripInlineHandlers(editor.innerHTML);
+}
+
+// XSS 방지를 위한 HTML sanitizer
+function sanitizeHtml(html) {
+  if (!html) return '';
+
+  // 파싱 전에 인라인 이벤트 핸들러 제거 (CSP 에러 방지)
+  html = stripInlineHandlers(html);
+
+  // 임시 div로 파싱
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+
+  // 위험한 태그 제거 (SVG 기반 XSS 포함)
+  const dangerousTags = [
+    'script', 'iframe', 'object', 'embed', 'form', 'input', 'button',
+    'base', 'link', 'meta', 'template', 'style', 'svg', 'math', 'noscript'
+  ];
+  dangerousTags.forEach(tag => {
+    const elements = temp.getElementsByTagName(tag);
+    while (elements.length > 0) {
+      elements[0].remove();
+    }
+  });
+
+  // 위험한 속성 제거
+  const allElements = temp.getElementsByTagName('*');
+  for (let i = 0; i < allElements.length; i++) {
+    const el = allElements[i];
+    const attrs = [...el.attributes];
+    attrs.forEach(attr => {
+      const name = attr.name.toLowerCase();
+      const value = attr.value.toLowerCase().trim();
+
+      // on* 이벤트 핸들러 제거
+      if (name.startsWith('on')) {
+        el.removeAttribute(attr.name);
+        return;
+      }
+
+      // style 속성 내 expression/url 제거
+      if (name === 'style' && (value.includes('expression') || value.includes('javascript') || value.includes('url('))) {
+        el.removeAttribute(attr.name);
+        return;
+      }
+
+      // javascript:, data:, vbscript: URL 제거
+      const dangerousProtocols = ['javascript:', 'data:', 'vbscript:'];
+      if (['href', 'src', 'action', 'formaction', 'xlink:href', 'poster'].includes(name)) {
+        if (dangerousProtocols.some(proto => value.startsWith(proto))) {
+          el.removeAttribute(attr.name);
+        }
+      }
+    });
+  }
+
+  return temp.innerHTML;
+}
+
+function setEditorContent(html) {
+  editor.innerHTML = sanitizeHtml(html);
+  // 링크 미리보기 재처리
+  processLinksInEditor();
+}
+
+function getPlainText() {
+  return editor.innerText || editor.textContent || '';
+}
+
+// ===== Memo Loading =====
+async function loadMemo(index) {
+  memos = await window.api.getAll();
+
+  // 기존 링크 프리뷰 제거
+  clearLinkPreviews();
+
+  if (memos.length === 0 || index < 0) {
+    currentIndex = -1;
+    currentMemo = null;
+    setEditorContent('');
+    updateStatusbar(null);
+    lastSavedContent = '';
+  } else {
+    currentIndex = Math.min(index, memos.length - 1);
+    currentMemo = memos[currentIndex];
+
+    // 오래된 메모의 인라인 핸들러 정리 (CSP 에러 방지)
+    const originalContent = currentMemo.content || '';
+    const cleanedContent = stripInlineHandlers(originalContent);
+
+    // 정리가 필요했으면 자동으로 다시 저장
+    if (originalContent !== cleanedContent && currentMemo.id) {
+      await window.api.update(currentMemo.id, cleanedContent);
+      currentMemo.content = cleanedContent;
+    }
+
+    setEditorContent(cleanedContent);
+    updateStatusbar(currentMemo.updated_at);
+    lastSavedContent = cleanedContent;
+
+    // 링크 프리뷰 처리
+    processLinksInEditor();
+  }
+}
+
+function clearLinkPreviews() {
+  linkPreviewsContainer.innerHTML = '';
+}
+
+
+function updateStatusbar(time) {
+  if (!time) {
+    statusbar.textContent = '';
+    return;
+  }
+  const date = new Date(time);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = date.getHours();
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const ampm = hours < 12 ? 'am' : 'pm';
+  const hour12 = String(hours % 12 || 12).padStart(2, '0');
+  statusbar.textContent = `${year}.${month}.${day} ${ampm}${hour12}:${minutes}`;
+}
+
+function formatDate(time) {
+  const date = new Date(time);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = date.getHours();
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const ampm = hours < 12 ? 'am' : 'pm';
+  const hour12 = String(hours % 12 || 12).padStart(2, '0');
+  return `${month}.${day} ${ampm}${hour12}:${minutes}`;
+}
+
+// ===== Sidebar =====
+let filteredIndices = []; // 검색 결과 인덱스 배열
+
+function getPlainTextFromHtml(html) {
+  if (!html) return '';
+  // <br>, <div>, <p> 태그를 줄바꿈으로 변환
+  let text = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/p>/gi, '\n');
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = text;
+  return tempDiv.textContent || tempDiv.innerText || '';
+}
+
+let openMenuId = null;
+
+function closeAllMenus() {
+  document.querySelectorAll('.memo-item-menu').forEach(m => m.remove());
+  openMenuId = null;
+}
+
+function renderMemoList() {
+  const searchQuery = searchInput.value.toLowerCase().trim();
+  memoList.innerHTML = '';
+  filteredIndices = [];
+
+  memos.forEach((memo, index) => {
+    // HTML에서 텍스트만 추출
+    const plainText = getPlainTextFromHtml(memo.content);
+
+    // 검색어 필터링
+    if (searchQuery && !plainText.toLowerCase().includes(searchQuery)) {
+      return;
+    }
+
+    filteredIndices.push(index);
+
+    const item = document.createElement('div');
+    item.className = 'memo-item' + (index === currentIndex ? ' active' : '') + (memo.pinned ? ' pinned' : '');
+
+    // 콘텐츠 영역
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'memo-item-content';
+
+    const firstLine = plainText.trim().split('\n')[0] || '';
+    const preview = firstLine.substring(0, 30) || '(빈 메모)';
+    const dateStr = formatDate(memo.updated_at);
+
+    const previewDiv = document.createElement('div');
+    previewDiv.className = 'memo-item-preview';
+    previewDiv.textContent = (memo.pinned ? '* ' : '') + preview;
+
+    const dateDiv = document.createElement('div');
+    dateDiv.className = 'memo-item-date';
+    dateDiv.textContent = dateStr;
+
+    contentDiv.appendChild(previewDiv);
+    contentDiv.appendChild(dateDiv);
+
+    // 설정 버튼
+    const menuBtn = document.createElement('button');
+    menuBtn.className = 'memo-item-menu-btn';
+    menuBtn.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><circle cx="4" cy="12" r="2"/><circle cx="20" cy="12" r="2"/></svg>';
+    menuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleMemoMenu(memo, item, menuBtn);
+    });
+
+    item.appendChild(contentDiv);
+    item.appendChild(menuBtn);
+
+    item.addEventListener('click', async () => {
+      closeAllMenus();
+      await loadMemo(index);
+      renderMemoList();
+    });
+
+    memoList.appendChild(item);
+
+    if (index === currentIndex) {
+      item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  });
+}
+
+function toggleMemoMenu(memo, _itemEl, btnEl) {
+  // 이미 열린 메뉴가 있으면 닫기
+  if (openMenuId === memo.id) {
+    closeAllMenus();
+    return;
+  }
+  closeAllMenus();
+
+  const menu = document.createElement('div');
+  menu.className = 'memo-item-menu';
+
+  // 버튼 위치 기준으로 메뉴 위치 설정
+  const rect = btnEl.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.left = (rect.right + 4) + 'px';
+  menu.style.top = (rect.top + rect.height / 2) + 'px';
+  menu.style.transform = 'translateY(-50%)';
+
+  // 고정 옵션
+  const pinOption = document.createElement('div');
+  pinOption.className = 'memo-item-menu-option';
+  pinOption.textContent = memo.pinned ? '고정 해제' : '고정';
+  pinOption.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await window.api.toggleMemoPin(memo.id);
+    closeAllMenus();
+    memos = await window.api.getAll();
+    renderMemoList();
+  });
+
+  // 삭제 옵션
+  const deleteOption = document.createElement('div');
+  deleteOption.className = 'memo-item-menu-option delete';
+  deleteOption.textContent = '삭제';
+  deleteOption.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await window.api.delete(memo.id);
+    closeAllMenus();
+    memos = await window.api.getAll();
+    if (currentMemo && currentMemo.id === memo.id) {
+      currentMemo = null;
+      currentIndex = -1;
+      setEditorContent('');
+    }
+    renderMemoList();
+  });
+
+  menu.appendChild(pinOption);
+  menu.appendChild(deleteOption);
+  document.body.appendChild(menu);
+  openMenuId = memo.id;
+}
+
+// 외부 클릭 시 메뉴 닫기
+document.addEventListener('click', () => {
+  closeAllMenus();
+});
+
+// 검색 이벤트
+searchInput.addEventListener('input', () => {
+  renderMemoList();
+});
+
+// 검색창에서 엔터 시 에디터로 포커스
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    editor.focus();
+  }
+});
+
+async function toggleSidebar() {
+  const isOpen = sidebar.classList.toggle('open');
+  document.body.classList.toggle('sidebar-open', isOpen);
+  listBtn.classList.toggle('active', isOpen);
+  if (isOpen) {
+    renderMemoList();
+    sidebar.style.width = sidebarWidth + 'px';
+    // 첫 번째 메모 자동 선택
+    if (memos.length > 0 && !currentMemo) {
+      await loadMemo(0);
+      renderMemoList();
+    }
+  } else {
+    // 닫힐 때 inline style 제거 (CSS transition 적용)
+    sidebar.style.width = '';
+  }
+  updateEditorPosition();
+}
+
+// ===== Sidebar Resize =====
+let isResizing = false;
+let sidebarWidth = 160;
+
+function updateEditorPosition() {
+  if (sidebar.classList.contains('open')) {
+    editor.style.left = (sidebarWidth + 20) + 'px';
+    linkPreviewsContainer.style.left = (sidebarWidth + 20) + 'px';
+  } else {
+    editor.style.left = '20px';
+    linkPreviewsContainer.style.left = '20px';
+  }
+}
+
+sidebarResize.addEventListener('mousedown', (e) => {
+  if (!sidebar.classList.contains('open')) return;
+  isResizing = true;
+  sidebar.classList.add('resizing');
+  editor.style.transition = 'none';
+  document.body.style.cursor = 'ew-resize';
+  document.body.style.userSelect = 'none';
+  e.preventDefault();
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (!isResizing) return;
+  const newWidth = Math.min(Math.max(e.clientX, 100), 400);
+  sidebar.style.width = newWidth + 'px';
+  sidebarWidth = newWidth;
+  updateEditorPosition();
+});
+
+document.addEventListener('mouseup', () => {
+  if (!isResizing) return;
+  isResizing = false;
+  sidebar.classList.remove('resizing');
+  editor.style.transition = '';
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+});
+
+// ===== Save Logic =====
+async function saveCurrentContent() {
+  // 폼 모드에서는 저장하지 않음 (폼이 사라지는 것 방지)
+  if (snippetFormMode) {
+    return;
+  }
+
+  const content = getEditorContent();
+  const plainText = getPlainText().trim();
+
+  // 텍스트가 없어도 이미지/비디오가 있으면 저장
+  const hasMedia = editor.querySelector('.memo-image, .memo-video, .link-preview');
+
+  // 빈 메모면 저장하지 않고, 기존 메모가 있다면 삭제
+  if (plainText === '' && !hasMedia) {
+    if (currentMemo) {
+      await window.api.delete(currentMemo.id);
+      currentMemo = null;
+      currentIndex = -1;
+      lastSavedContent = '';
+      memos = await window.api.getAll();
+      if (sidebar.classList.contains('open')) {
+        renderMemoList();
+      }
+    }
+    return;
+  }
+
+  if (currentMemo) {
+    await window.api.update(currentMemo.id, content);
+    lastSavedContent = content;
+  } else {
+    currentMemo = await window.api.create();
+    await window.api.update(currentMemo.id, content);
+    memos = await window.api.getAll();
+    currentIndex = 0;
+    lastSavedContent = content;
+  }
+  updateStatusbar(new Date().toISOString());
+}
+
+async function cleanupOnClose() {
+  try {
+    // 대기 중인 저장 취소 (즉시 저장할 것이므로)
+    clearTimeout(saveTimeout);
+
+    const plainText = getPlainText().trim();
+    const hasMedia = editor.querySelector('.memo-image, .memo-video, .link-preview');
+
+    if (plainText === '' && !hasMedia && currentMemo) {
+      await window.api.delete(currentMemo.id);
+    } else if (plainText !== '' || hasMedia) {
+      await saveCurrentContent();
+    }
+  } catch (e) {
+    console.error('Cleanup error:', e);
+  }
+}
+
+// ===== Image Paste Handler =====
+async function handleImagePaste(file) {
+  try {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const base64 = e.target.result.split(',')[1];
+      const result = await window.api.saveImage(base64, file.type);
+
+      if (result.success) {
+        insertImageAtCursor(result.path);
+      }
+    };
+    reader.readAsDataURL(file);
+  } catch (e) {
+    console.error('Image paste error:', e);
+  }
+}
+
+function insertImageAtCursor(imagePath) {
+  const img = document.createElement('img');
+  img.src = `file://${imagePath}`;
+  img.className = 'memo-image';
+  img.setAttribute('data-path', imagePath);
+
+  const selection = window.getSelection();
+  if (selection.rangeCount > 0) {
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(img);
+
+    // 이미지 뒤에 커서 이동
+    range.setStartAfter(img);
+    range.setEndAfter(img);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  } else {
+    editor.appendChild(img);
+  }
+
+  // 저장 트리거
+  triggerSave();
+}
+
+// ===== Video Paste Handler =====
+async function handleVideoPaste(file) {
+  try {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const base64 = e.target.result.split(',')[1];
+      const result = await window.api.saveVideo(base64, file.type);
+
+      if (result.success) {
+        insertVideoAtCursor(result.path, file.type);
+      } else {
+        console.error('Video save failed:', result.error);
+      }
+    };
+    reader.readAsDataURL(file);
+  } catch (e) {
+    console.error('Video paste error:', e);
+  }
+}
+
+function insertVideoAtCursor(videoPath, mimeType) {
+  const video = document.createElement('video');
+  video.src = `file://${videoPath}`;
+  video.className = 'memo-video';
+  video.setAttribute('data-path', videoPath);
+  video.setAttribute('controls', 'true');
+  video.setAttribute('preload', 'metadata');
+  video.setAttribute('contenteditable', 'false');
+
+  // MIME 타입 설정
+  if (mimeType) {
+    const source = document.createElement('source');
+    source.src = `file://${videoPath}`;
+    source.type = mimeType;
+    video.appendChild(source);
+  }
+
+  const selection = window.getSelection();
+  if (selection.rangeCount > 0) {
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(video);
+
+    // 비디오 뒤에 커서 이동
+    range.setStartAfter(video);
+    range.setEndAfter(video);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  } else {
+    editor.appendChild(video);
+  }
+
+  // 저장 트리거
+  triggerSave();
+}
+
+// ===== Link Detection & Preview =====
+// 최소한 도메인.확장자 형태가 있어야 URL로 인식 (예: google.com)
+const urlRegex = /(https?:\/\/[a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}[^\s<]*)/g;
+const linkPreviewCache = new Map(); // url -> preview data
+const linkPreviewsContainer = document.getElementById('link-previews');
+let linkProcessTimeout = null;
+
+function processLinksInEditor() {
+  clearTimeout(linkProcessTimeout);
+  linkProcessTimeout = setTimeout(async () => {
+    const text = getPlainText();
+    const urls = text.match(urlRegex) || [];
+
+    // 중복 제거
+    const uniqueUrls = [...new Set(urls)];
+
+    // 현재 표시된 프리뷰와 비교
+    const currentPreviews = new Set(
+      Array.from(linkPreviewsContainer.querySelectorAll('.link-preview'))
+        .map(el => el.getAttribute('data-link-url'))
+    );
+
+    // 삭제된 링크의 프리뷰 제거
+    for (const url of currentPreviews) {
+      if (!uniqueUrls.includes(url)) {
+        const preview = linkPreviewsContainer.querySelector(`[data-link-url="${url}"]`);
+        if (preview) preview.remove();
+      }
+    }
+
+    // 새 링크 처리
+    for (const url of uniqueUrls) {
+      if (!currentPreviews.has(url)) {
+        await createLinkPreview(url);
+      }
+    }
+
+    // 에디터 크기 조정
+    updateEditorForPreviews();
+  }, 1000);
+}
+
+function updateEditorForPreviews() {
+  // 사이드바 열림 상태에서 미리보기 컨테이너 위치도 조정
+  if (sidebar.classList.contains('open')) {
+    linkPreviewsContainer.style.left = (sidebarWidth + 20) + 'px';
+  } else {
+    linkPreviewsContainer.style.left = '20px';
+  }
+}
+
+async function createLinkPreview(url) {
+  try {
+    // 이미 프리뷰가 있으면 스킵
+    if (linkPreviewsContainer.querySelector(`[data-link-url="${url}"]`)) {
+      return;
+    }
+
+    // 캐시 확인
+    let data = linkPreviewCache.get(url);
+
+    if (!data) {
+      let result;
+      try {
+        result = await window.api.fetchLinkMeta(url);
+      } catch (fetchErr) {
+        return;
+      }
+
+      if (!result || !result.success || !result.data) {
+        return;
+      }
+
+      data = result.data;
+      linkPreviewCache.set(url, data);
+    }
+
+    const { title, description, image, favicon } = data;
+    if (!title && !description && !image && !favicon) {
+      return;
+    }
+
+    // 프리뷰 카드 생성 후 컨테이너에 추가
+    const previewEl = createPreviewElement(url, title, description, image, favicon);
+    linkPreviewsContainer.appendChild(previewEl);
+
+    updateEditorForPreviews();
+  } catch (e) {
+    console.error('Link preview error:', e);
+  }
+}
+
+function createPreviewElement(url, title, description, image, favicon) {
+  const hostname = new URL(url).hostname;
+  const displayTitle = title || hostname;
+
+  const link = document.createElement('a');
+  link.className = 'link-preview';
+  link.href = url;
+  link.setAttribute('data-link-url', url);
+
+  if (image) {
+    const imgWrap = document.createElement('div');
+    imgWrap.className = 'link-preview-image';
+    const img = document.createElement('img');
+    img.src = image;
+    img.alt = '';
+    img.loading = 'lazy';
+    img.addEventListener('error', () => { imgWrap.style.display = 'none'; });
+    imgWrap.appendChild(img);
+    link.appendChild(imgWrap);
+  }
+
+  const content = document.createElement('div');
+  content.className = 'link-preview-content';
+
+  if (favicon) {
+    const fav = document.createElement('img');
+    fav.className = 'link-preview-favicon';
+    fav.src = favicon;
+    fav.alt = '';
+    fav.addEventListener('error', () => { fav.style.display = 'none'; });
+    content.appendChild(fav);
+  }
+
+  const titleDiv = document.createElement('div');
+  titleDiv.className = 'link-preview-title';
+  titleDiv.textContent = displayTitle;
+  content.appendChild(titleDiv);
+
+  if (description) {
+    const descDiv = document.createElement('div');
+    descDiv.className = 'link-preview-desc';
+    descDiv.textContent = description.length > 100 ? description.substring(0, 100) + '...' : description;
+    content.appendChild(descDiv);
+  }
+
+  link.appendChild(content);
+
+  // 클릭 이벤트
+  link.addEventListener('click', (e) => {
+    e.preventDefault();
+    window.api.openExternal(url);
+  });
+
+  return link;
+}
+
+// ===== Text Insert Helper (execCommand 대체) =====
+function insertTextAtCursor(text) {
+  const selection = window.getSelection();
+  if (!selection.rangeCount) return;
+
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+
+  const textNode = document.createTextNode(text);
+  range.insertNode(textNode);
+
+  // 커서를 텍스트 끝으로 이동
+  range.setStartAfter(textNode);
+  range.setEndAfter(textNode);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+// ===== Event Handlers =====
+let saveTimeout;
+function triggerSave() {
+  clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(() => {
+    saveCurrentContent();
+  }, 300);
+}
+
+// Input event (contenteditable)
+editor.addEventListener('input', () => {
+  triggerSave();
+  processLinksInEditor();
+  processCheckboxes();
+});
+
+// Paste event - 즉시 저장 (붙여넣기 후 바로 종료해도 저장되도록)
+editor.addEventListener('paste', () => {
+  clearTimeout(saveTimeout);
+  // 붙여넣기 내용이 DOM에 반영된 후 저장
+  setTimeout(() => {
+    saveCurrentContent();
+  }, 0);
+});
+
+// 체크박스 & 리스트 자동 변환
+function processCheckboxes() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return;
+
+  const range = sel.getRangeAt(0);
+  const node = range.startContainer;
+  if (node.nodeType !== Node.TEXT_NODE) return;
+
+  const text = node.textContent;
+  const offset = range.startOffset;
+
+  // 현재 줄의 시작 찾기
+  const beforeCursor = text.slice(0, offset);
+  const lineStart = beforeCursor.lastIndexOf('\n') + 1;
+
+  // 패턴 목록 (줄 시작 기준)
+  const patterns = [
+    // 체크박스
+    { regex: /\[\s?\]/, replacement: '☐ ', lineStart: false },
+    { regex: /\[[xX]\]/, replacement: '☑ ', lineStart: false },
+    // 리스트 (줄 시작에서만)
+    { regex: /^- $/, replacement: '• ', lineStart: true },
+    { regex: /^\* $/, replacement: '• ', lineStart: true },
+  ];
+
+  for (const pattern of patterns) {
+    const searchText = pattern.lineStart ? text.slice(lineStart, offset) : text;
+    const match = searchText.match(pattern.regex);
+
+    if (match) {
+      const matchStart = pattern.lineStart ? lineStart + match.index : match.index;
+      const matchEnd = matchStart + match[0].length;
+
+      // 커서가 패턴 바로 뒤에 있을 때만 변환
+      if (offset === matchEnd) {
+        const before = text.slice(0, matchStart);
+        const after = text.slice(matchEnd);
+        node.textContent = before + pattern.replacement + after;
+
+        // 커서 위치 복원
+        const newOffset = before.length + pattern.replacement.length;
+        range.setStart(node, newOffset);
+        range.setEnd(node, newOffset);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        return;
+      }
+    }
+  }
+}
+
+// 체크박스 클릭 토글
+editor.addEventListener('click', () => {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return;
+
+  const range = sel.getRangeAt(0);
+  const node = range.startContainer;
+  if (node.nodeType !== Node.TEXT_NODE) return;
+
+  const text = node.textContent;
+  const offset = range.startOffset;
+
+  // 클릭 위치의 문자 확인
+  const charOffset = text[offset] === '☐' || text[offset] === '☑' ? offset : offset - 1;
+
+  if (text[charOffset] === '☐') {
+    node.textContent = text.slice(0, charOffset) + '☑' + text.slice(charOffset + 1);
+    triggerSave();
+  } else if (text[charOffset] === '☑') {
+    node.textContent = text.slice(0, charOffset) + '☐' + text.slice(charOffset + 1);
+    triggerSave();
+  }
+});
+
+// 리스트 자동 완성 (Enter 시)
+editor.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  if (e.isComposing || isComposing) return; // IME 조합 중이면 무시
+  if (snippetFormMode || editor.querySelector('.snippet-match')) return;
+
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed) return;
+
+  const range = sel.getRangeAt(0);
+  const node = range.startContainer;
+  if (node.nodeType !== Node.TEXT_NODE) return;
+
+  const text = node.textContent;
+  const offset = range.startOffset;
+
+  // 현재 줄 찾기
+  const beforeCursor = text.slice(0, offset);
+  const afterCursor = text.slice(offset);
+  const lineStart = beforeCursor.lastIndexOf('\n') + 1;
+  const lineEnd = afterCursor.indexOf('\n');
+  const currentLine = beforeCursor.slice(lineStart);
+  const restOfLine = lineEnd === -1 ? afterCursor : afterCursor.slice(0, lineEnd);
+
+  // 리스트 패턴 체크
+  const bulletMatch = currentLine.match(/^(\s*)•\s*/);
+  const numberMatch = currentLine.match(/^(\s*)(\d+)\.\s*/);
+  const checkboxMatch = currentLine.match(/^(\s*)[☐☑]\s*/);
+
+  let prefix = '';
+
+  if (bulletMatch) {
+    // 빈 리스트 항목이면 리스트 종료
+    if (currentLine.trim() === '•' && restOfLine.trim() === '') {
+      e.preventDefault();
+      const newText = text.slice(0, lineStart) + text.slice(offset);
+      node.textContent = newText;
+      const newPos = Math.max(0, lineStart);
+      range.setStart(node, newPos);
+      range.setEnd(node, newPos);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      triggerSave();
+      return;
+    }
+    prefix = bulletMatch[1] + '• ';
+  } else if (numberMatch) {
+    if (currentLine.trim() === numberMatch[2] + '.' && restOfLine.trim() === '') {
+      e.preventDefault();
+      const newText = text.slice(0, lineStart) + text.slice(offset);
+      node.textContent = newText;
+      const newPos = Math.max(0, lineStart);
+      range.setStart(node, newPos);
+      range.setEnd(node, newPos);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      triggerSave();
+      return;
+    }
+    const nextNum = parseInt(numberMatch[2]) + 1;
+    prefix = numberMatch[1] + nextNum + '. ';
+  } else if (checkboxMatch) {
+    if ((currentLine.trim() === '☐' || currentLine.trim() === '☑') && restOfLine.trim() === '') {
+      e.preventDefault();
+      const newText = text.slice(0, lineStart) + text.slice(offset);
+      node.textContent = newText;
+      const newPos = Math.max(0, lineStart);
+      range.setStart(node, newPos);
+      range.setEnd(node, newPos);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      triggerSave();
+      return;
+    }
+    prefix = checkboxMatch[1] + '☐ ';
+  }
+
+  if (prefix) {
+    e.preventDefault();
+    // 현재 줄 끝까지의 텍스트와 나머지 분리
+    const newText = beforeCursor + '\n' + prefix + afterCursor;
+    node.textContent = newText;
+
+    const newOffset = offset + 1 + prefix.length;
+    range.setStart(node, newOffset);
+    range.setEnd(node, newOffset);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    triggerSave();
+  }
+});
+
+// Paste event
+editor.addEventListener('paste', async (e) => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault();
+      const file = item.getAsFile();
+      if (file) {
+        await handleImagePaste(file);
+      }
+      return;
+    }
+    if (item.type.startsWith('video/')) {
+      e.preventDefault();
+      const file = item.getAsFile();
+      if (file) {
+        await handleVideoPaste(file);
+      }
+      return;
+    }
+  }
+
+  // 텍스트 붙여넣기는 plain text로 처리 (서식 제거)
+  const text = e.clipboardData.getData('text/plain');
+  if (text) {
+    e.preventDefault();
+    insertTextAtCursor(text);
+  }
+});
+
+// Drag & Drop images
+editor.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  editor.classList.add('dragover');
+});
+
+editor.addEventListener('dragleave', () => {
+  editor.classList.remove('dragover');
+});
+
+editor.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  editor.classList.remove('dragover');
+
+  const files = e.dataTransfer?.files;
+
+  // 이미지/동영상 파일 처리
+  if (files && files.length > 0) {
+    for (const file of files) {
+      if (file.type.startsWith('image/')) {
+        await handleImagePaste(file);
+        return;
+      }
+      if (file.type.startsWith('video/')) {
+        await handleVideoPaste(file);
+        return;
+      }
+    }
+  }
+
+  // 텍스트 드래그 시 plain text만 가져오기 (서식 제거)
+  const text = e.dataTransfer?.getData('text/plain');
+  if (text) {
+    insertTextAtCursor(text);
+  }
+});
+
+// ===== Media Selection & Deletion =====
+let selectedMedia = null;
+
+function selectMedia(element) {
+  // 기존 선택 해제
+  if (selectedMedia) {
+    selectedMedia.classList.remove('selected');
+  }
+  // 새로운 선택
+  selectedMedia = element;
+  if (element) {
+    element.classList.add('selected');
+    element.focus();
+  }
+}
+
+function deleteSelectedMedia() {
+  if (selectedMedia) {
+    selectedMedia.remove();
+    selectedMedia = null;
+    triggerSave();
+  }
+}
+
+// 미디어 클릭 시 선택
+editor.addEventListener('click', (e) => {
+  const media = e.target.closest('.memo-image, .memo-video');
+  if (media) {
+    e.preventDefault();
+    selectMedia(media);
+  } else {
+    // 다른 곳 클릭 시 선택 해제
+    selectMedia(null);
+  }
+});
+
+// 키보드로 미디어 삭제
+editor.addEventListener('keydown', (e) => {
+  if (selectedMedia && (e.key === 'Backspace' || e.key === 'Delete')) {
+    e.preventDefault();
+    deleteSelectedMedia();
+  }
+});
+
+// List button
+listBtn.addEventListener('click', () => {
+  toggleSidebar();
+});
+
+// New memo button
+newBtn.addEventListener('click', () => {
+  window.api.newMemo();
+});
+
+// Close button
+closeBtn.addEventListener('click', async () => {
+  await cleanupOnClose();
+  window.api.forceClose();
+});
+
+// ESC close
+window.api.onRequestClose(async () => {
+  await cleanupOnClose();
+  window.api.forceClose();
+});
+
+// 앱 종료 전 저장 요청 (트레이 종료 시)
+window.api.onSaveBeforeQuit(async () => {
+  clearTimeout(saveTimeout);
+  await saveCurrentContent();
+});
+
+// Memo sync
+window.api.onMemosUpdated(async () => {
+  memos = await window.api.getAll();
+  if (sidebar.classList.contains('open')) {
+    renderMemoList();
+  }
+});
+
+// 새 메모 생성 요청 (단축키/버튼에서 호출)
+let pendingNewMemo = false;
+
+window.api.onCreateNewMemo(async () => {
+  pendingNewMemo = true;
+
+  // 현재 메모 저장
+  await saveCurrentContent();
+
+  // 빈 메모 상태로 초기화
+  currentMemo = null;
+  currentIndex = -1;
+  setEditorContent('');
+  lastSavedContent = '';
+  clearLinkPreviews();
+  updateStatusbar(null);
+
+  // 메모 목록 새로고침
+  memos = await window.api.getAll();
+  if (sidebar.classList.contains('open')) {
+    renderMemoList();
+  }
+
+  // 에디터 위치 유지 (사이드바 열린 상태 유지)
+  updateEditorPosition();
+
+  // 에디터 포커스
+  editor.focus();
+
+  // 플래그 해제
+  setTimeout(() => {
+    pendingNewMemo = false;
+  }, 200);
+});
+
+// 열기 시 검색창 포커스
+window.api.onFocusSearch(() => {
+  searchInput.focus();
+  searchInput.select();
+});
+
+// 메모 탐색 (사이드바 열림: 방향키, 닫힘: Cmd+방향키)
+document.addEventListener('keydown', async (e) => {
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+
+  const isSidebarOpen = sidebar.classList.contains('open');
+  const isCmdPressed = e.metaKey || e.ctrlKey;
+
+  // 사이드바 열림: 에디터 포커스 없을 때 방향키
+  // 사이드바 닫힘: Cmd+방향키
+  const shouldNavigate = isSidebarOpen
+    ? (document.activeElement !== editor)
+    : isCmdPressed;
+
+  if (!shouldNavigate) return;
+
+  e.preventDefault();
+
+  // 사이드바 열림: 필터링된 결과에서 탐색
+  // 사이드바 닫힘: 전체 메모에서 탐색
+  const indices = isSidebarOpen ? filteredIndices : memos.map((_, i) => i);
+  if (indices.length === 0) return;
+
+  const currentPosInFiltered = indices.indexOf(currentIndex);
+
+  if (e.key === 'ArrowUp') {
+    // 위로: 리스트에서 위쪽 항목
+    if (currentPosInFiltered > 0) {
+      await loadMemo(indices[currentPosInFiltered - 1]);
+      if (isSidebarOpen) renderMemoList();
+    }
+  } else {
+    // 아래로: 리스트에서 아래쪽 항목
+    if (currentPosInFiltered < indices.length - 1) {
+      await loadMemo(indices[currentPosInFiltered + 1]);
+      if (isSidebarOpen) renderMemoList();
+    } else if (currentPosInFiltered === -1 && indices.length > 0) {
+      await loadMemo(indices[0]);
+      if (isSidebarOpen) renderMemoList();
+    }
+  }
+});
+
+
+// ===== Scrollbar visibility on scroll =====
+let editorScrollTimeout;
+let memoListScrollTimeout;
+
+editor.addEventListener('scroll', () => {
+  editor.classList.add('scrolling');
+  clearTimeout(editorScrollTimeout);
+  editorScrollTimeout = setTimeout(() => {
+    editor.classList.remove('scrolling');
+  }, 1000);
+});
+
+memoList.addEventListener('scroll', () => {
+  memoList.classList.add('scrolling');
+  clearTimeout(memoListScrollTimeout);
+  memoListScrollTimeout = setTimeout(() => {
+    memoList.classList.remove('scrolling');
+  }, 1000);
+});
+
+// ===== Snippet Integration =====
+let snippets = [];
+let matchedSnippet = null;
+let snippetContent = '';
+let snippetTrigger = '/';
+let isComposing = false;
+let snippetFormMode = false;
+let currentSnippetForForm = null;
+let isProcessingSnippet = false; // 중복 실행 방지
+let snippetMatchActive = false; // 스니펫 매치 활성 상태 플래그
+
+// 순차 입력용 상태
+let snippetFields = [];
+let snippetFieldIndex = 0;
+let snippetFieldValues = {};
+let savedEditorNodes = null; // 폼 열기 전 에디터 노드 저장
+
+// body 템플릿에서 {{필드명}} 추출
+function extractFields(body) {
+  if (!body) return [];
+  const regex = /\{\{([^}]+)\}\}/g;
+  const fields = [];
+  let match;
+  while ((match = regex.exec(body)) !== null) {
+    if (!fields.includes(match[1])) {
+      fields.push(match[1]);
+    }
+  }
+  return fields;
+}
+
+async function loadSnippets() {
+  // 기존 스니펫 로드
+  const dbSnippets = await window.api.getSnippets();
+
+  // 매니페스트 명령어 로드
+  const manifestCommands = await window.api.getManifestCommands();
+
+  // 매니페스트 명령어를 스니펫 형식으로 변환
+  const manifestSnippets = manifestCommands.map(cmd => ({
+    id: `manifest:${cmd.toolId}:${cmd.shortcut}`,
+    type: 'manifest',
+    shortcut: cmd.shortcut,
+    name: `${cmd.toolIcon} ${cmd.shortcut}`,
+    config: JSON.stringify({
+      toolId: cmd.toolId,
+      fields: cmd.fields,
+      body: cmd.body
+    }),
+    isManifest: true
+  }));
+
+  // 합쳐서 사용
+  snippets = [...dbSnippets, ...manifestSnippets];
+}
+
+async function loadTriggerKey() {
+  snippetTrigger = await window.api.getTriggerKey() || '/';
+}
+
+loadSnippets();
+loadTriggerKey();
+
+// ===== 앱 초기화 =====
+async function initApp() {
+  // 새 메모 모드 확인
+  const urlParams = new URLSearchParams(window.location.search);
+  const isNewMemoMode = urlParams.get('mode') === 'new';
+
+  // 초기 로드 시 트랜지션 비활성화
+  sidebar.style.transition = 'none';
+  editor.style.transition = 'none';
+
+  memos = await window.api.getAll();
+
+  if (isNewMemoMode) {
+    // 새 메모 모드: 빈 에디터 + 사이드바 열기
+    currentMemo = null;
+    currentIndex = -1;
+    setEditorContent('');
+  } else if (memos.length > 0) {
+    // 기본 모드: 마지막 메모 로드
+    await loadMemo(0);
+  }
+
+  // 사이드바 열기 (공통)
+  sidebar.classList.add('open');
+  listBtn.classList.add('active');
+  sidebar.style.width = sidebarWidth + 'px';
+  updateEditorPosition();
+  renderMemoList();
+
+  // 다음 프레임에서 트랜지션 복원
+  requestAnimationFrame(() => {
+    sidebar.style.transition = '';
+    editor.style.transition = '';
+  });
+
+  editor.focus();
+}
+
+initApp();
+
+// 호출키 변경 시 업데이트
+window.api.onTriggerKeyChanged((key) => {
+  snippetTrigger = key;
+});
+
+// IME 조합 감지
+editor.addEventListener('compositionstart', () => {
+  isComposing = true;
+});
+editor.addEventListener('compositionend', () => {
+  isComposing = false;
+  setTimeout(checkSnippetTrigger, 50);
+});
+
+// IME 상태가 stuck 되는 경우를 위한 추가 리셋
+editor.addEventListener('blur', () => {
+  isComposing = false;
+});
+editor.addEventListener('focus', () => {
+  isComposing = false;
+});
+
+// 매치 해제 (텍스트 유지)
+function clearMatch() {
+  const match = editor.querySelector('span.snippet-match');
+  if (match) {
+    const text = document.createTextNode(match.textContent);
+    match.parentNode.replaceChild(text, match);
+    editor.normalize();
+  }
+  matchedSnippet = null;
+}
+
+// 매치 삭제 (텍스트 + content도 삭제) - HTML 구조 보존
+// Promise 반환하여 IME 커밋 완료 후 처리
+function deleteMatch() {
+  return new Promise((resolve) => {
+    const match = editor.querySelector('span.snippet-match');
+    if (!match) {
+      matchedSnippet = null;
+      snippetContent = '';
+      resolve();
+      return;
+    }
+
+    // 매치 전의 텍스트 저장 (나중에 복원용)
+    const prevSibling = match.previousSibling;
+    const prevText = prevSibling?.nodeType === Node.TEXT_NODE ? prevSibling.textContent : '';
+
+    // IME 조합 강제 종료: blur로 조합 커밋
+    editor.blur();
+
+    // blur 후 IME 커밋이 DOM에 반영될 때까지 충분히 대기
+    setTimeout(() => {
+      const currentMatch = editor.querySelector('span.snippet-match');
+      if (!currentMatch) {
+        matchedSnippet = null;
+        snippetContent = '';
+        resolve();
+        return;
+      }
+
+      const parent = currentMatch.parentNode;
+
+      // 매치 뒤의 모든 형제 노드 제거 (IME 잔여 문자 포함)
+      while (currentMatch.nextSibling) {
+        currentMatch.nextSibling.remove();
+      }
+
+      // 매치 span 삭제
+      currentMatch.remove();
+
+      // 매치 전 텍스트 노드가 변경되었으면 복원
+      if (prevSibling?.nodeType === Node.TEXT_NODE && prevSibling.textContent !== prevText) {
+        prevSibling.textContent = prevText;
+      }
+
+      // 커서 위치 설정
+      const sel = window.getSelection();
+      const range = document.createRange();
+
+      if (prevSibling && prevSibling.nodeType === Node.TEXT_NODE) {
+        range.setStart(prevSibling, prevSibling.textContent.length);
+        range.setEnd(prevSibling, prevSibling.textContent.length);
+      } else if (parent && parent.firstChild) {
+        range.setStart(parent, 0);
+        range.setEnd(parent, 0);
+      } else {
+        range.selectNodeContents(editor);
+        range.collapse(true);
+      }
+
+      sel.removeAllRanges();
+      sel.addRange(range);
+
+      // 인접한 텍스트 노드 병합
+      editor.normalize();
+
+      matchedSnippet = null;
+      snippetContent = '';
+      resolve();
+    }, 100); // IME 커밋 반영 대기 시간 증가
+  });
+}
+
+// 트리거 체크
+function checkSnippetTrigger() {
+  // ASCII 트리거 (/, #, @ 등)는 IME 상태 무시
+  const triggerIsAscii = snippetTrigger && snippetTrigger.charCodeAt(0) < 128;
+  const shouldSkipForComposing = isComposing && !triggerIsAscii;
+
+  if (snippetFormMode || shouldSkipForComposing || snippets.length === 0) {
+    return;
+  }
+
+  const existingMatch = editor.querySelector('span.snippet-match');
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed) return;
+
+  const range = sel.getRangeAt(0);
+  const node = range.startContainer;
+
+  // 이미 매치가 있으면 content 추적
+  if (existingMatch) {
+    // 매치 바로 뒤의 텍스트 노드를 content로 추적
+    const nextSibling = existingMatch.nextSibling;
+    if (nextSibling && nextSibling.nodeType === Node.TEXT_NODE) {
+      const text = nextSibling.textContent;
+      // 스페이스로 시작하면 그 뒤가 content
+      if (text.startsWith(' ')) {
+        snippetContent = text.substring(1); // 첫 스페이스 제외
+      } else {
+        snippetContent = '';
+      }
+    } else {
+      snippetContent = '';
+    }
+
+    // 매치 밖으로 나갔는지 체크 (줄바꿈 등)
+    if (node.nodeType === Node.TEXT_NODE) {
+      const nodeParent = node.parentNode;
+      // 매치나 매치의 형제가 아니면 해제
+      if (nodeParent !== existingMatch &&
+          nodeParent !== existingMatch.parentNode &&
+          !existingMatch.parentNode.contains(node)) {
+        clearMatch();
+      }
+    }
+    return;
+  }
+
+  if (node.nodeType !== Node.TEXT_NODE) return;
+
+  const text = node.textContent;
+  const cursorPos = range.startOffset;
+
+  // 트리거(/) 위치 찾기
+  let triggerIdx = -1;
+  for (let i = cursorPos - 1; i >= 0; i--) {
+    const char = text[i];
+    if (char === snippetTrigger) {
+      if (i === 0 || /\s/.test(text[i - 1])) {
+        triggerIdx = i;
+      }
+      break;
+    }
+    if (/\s/.test(char)) break;
+  }
+
+  if (triggerIdx === -1) return;
+
+  const keyword = text.substring(triggerIdx + 1, cursorPos);
+  if (!keyword) return;
+
+  const match = snippets.find(s =>
+    s.shortcut.toLowerCase() === keyword.toLowerCase()
+  );
+  console.log('[Trigger] keyword:', keyword, 'found:', !!match, 'snippets count:', snippets.length);
+  if (!match) return;
+
+  matchedSnippet = match;
+  snippetContent = '';
+  console.log('[Trigger] Matched snippet:', match.shortcut, match.id);
+
+  // 배경 반전 적용
+  const before = text.substring(0, triggerIdx);
+  const matchText = text.substring(triggerIdx, cursorPos);
+  const after = text.substring(cursorPos);
+
+  const span = document.createElement('span');
+  span.className = 'snippet-match';
+  span.textContent = matchText;
+
+  const frag = document.createDocumentFragment();
+  if (before) frag.appendChild(document.createTextNode(before));
+  frag.appendChild(span);
+  if (after) frag.appendChild(document.createTextNode(after));
+
+  node.parentNode.replaceChild(frag, node);
+
+  // 커서를 매치 끝에
+  requestAnimationFrame(() => {
+    const newMatch = editor.querySelector('span.snippet-match');
+    if (newMatch) {
+      const r = document.createRange();
+      r.selectNodeContents(newMatch);
+      r.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+  });
+}
+
+// 폼 펼침 - 인라인 순차 입력 (match 자리에 폼 표시)
+function expandSnippetForm(fields, snippet) {
+  console.log('[Form] expandSnippetForm called, fields:', fields);
+  const match = editor.querySelector('.snippet-match');
+  if (!match) {
+    console.log('[Form] No match found, returning');
+    return;
+  }
+
+  // 폼이 열린 직후 Enter 무시를 위해 플래그 설정
+  isProcessingSnippet = true;
+  setTimeout(() => {
+    isProcessingSnippet = false;
+    console.log('[Form] Ready for input');
+  }, 200);
+
+  // match 뒤의 텍스트 노드에서 snippetContent + IME 잔여 문자 제거
+  const nextSibling = match.nextSibling;
+  if (nextSibling && nextSibling.nodeType === Node.TEXT_NODE) {
+    const text = nextSibling.textContent;
+    if (snippetContent) {
+      const contentIdx = text.indexOf(snippetContent);
+      if (contentIdx !== -1) {
+        nextSibling.textContent = text.substring(contentIdx + snippetContent.length);
+      }
+    }
+    // IME 잔여 문자 제거 (앞부분의 비공백 문자)
+    nextSibling.textContent = nextSibling.textContent.replace(/^\S*/, '');
+  }
+
+  // 상태 초기화
+  snippetFields = fields;
+  snippetFieldIndex = 0;
+  snippetFieldValues = {};
+  snippetFormMode = true;
+  currentSnippetForForm = snippet;
+  matchedSnippet = null;
+  snippetContent = '';
+
+  // match를 폼 컨테이너로 교체 (인라인, 배경 스타일 유지)
+  const formContainer = document.createElement('span');
+  formContainer.className = 'snippet-form snippet-match';
+  match.parentNode.replaceChild(formContainer, match);
+
+  // 첫 번째 필드 표시
+  showNextFieldInline(formContainer);
+}
+
+// 인라인 폼에 다음 필드 표시
+function showNextFieldInline(container) {
+  const field = snippetFields[snippetFieldIndex];
+  if (!field || !container) return;
+
+  // IME 잔여 문자 제거 (첫 필드일 때만)
+  if (snippetFieldIndex === 0) {
+    container.textContent = '';
+  }
+
+  // 에디터의 contenteditable 끄기 (입력이 input span 안으로 들어가도록)
+  editor.contentEditable = 'false';
+
+  // 라벨: "필드명: "
+  const label = document.createElement('span');
+  label.className = 'snippet-label';
+  label.textContent = field + ': ';
+  container.appendChild(label);
+
+  // 입력 영역
+  const input = document.createElement('span');
+  input.className = 'snippet-input';
+  input.contentEditable = 'true';
+  input.dataset.field = field;
+  input.dataset.index = snippetFieldIndex;
+  container.appendChild(input);
+
+  // IME 조합 상태 추적 (input 요소 전용)
+  input.addEventListener('compositionstart', () => {
+    isComposing = true;
+    console.log('[Input] Composition start');
+  });
+  input.addEventListener('compositionend', () => {
+    isComposing = false;
+    console.log('[Input] Composition end');
+  });
+
+  // ESC 키 처리 - input에서 직접 처리 (텍스트 유지, 한글 중복 방지)
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      // blur 전에 현재 값 저장 (IME 조합 중인 글자 제외)
+      const currentValue = input.textContent || '';
+      console.log('[Input ESC] value before blur:', currentValue);
+
+      // IME 조합 취소
+      isComposing = false;
+      input.blur();
+      input.contentEditable = 'false';
+
+      // 폼 내용을 텍스트로 변환
+      setTimeout(() => {
+        const formContainer = editor.querySelector('.snippet-form');
+        if (formContainer && formContainer.parentNode) {
+          // 저장된 값 사용 (blur 후 추가된 글자 제외)
+          const labelEl = formContainer.querySelector('.snippet-label');
+          const labelText = labelEl ? labelEl.textContent : '';
+          const finalText = labelText + currentValue;
+
+          console.log('[Input ESC] final text:', finalText);
+
+          // 폼을 텍스트 노드로 교체
+          const textNode = document.createTextNode(finalText);
+          const parent = formContainer.parentNode;
+          parent.replaceChild(textNode, formContainer);
+          editor.normalize();
+
+          // 커서를 텍스트 끝으로 이동
+          try {
+            if (textNode.parentNode) {
+              const sel = window.getSelection();
+              const range = document.createRange();
+              range.setStartAfter(textNode);
+              range.setEndAfter(textNode);
+              sel.removeAllRanges();
+              sel.addRange(range);
+            }
+          } catch (e) {
+            console.log('[Input ESC] cursor error:', e);
+          }
+        }
+
+        // 상태 초기화
+        snippetFormMode = false;
+        currentSnippetForForm = null;
+        matchedSnippet = null;
+        snippetFields = [];
+        snippetFieldIndex = 0;
+        snippetFieldValues = {};
+        isProcessingSnippet = false;
+
+        // 에디터의 contenteditable 복원
+        editor.contentEditable = 'true';
+        editor.focus();
+      }, 30);
+
+      return;
+    }
+  });
+
+  // Enter 키 처리 - input에서 직접 처리하여 중복 방지
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      // 이미 처리 중이면 무시
+      if (isProcessingSnippet) return;
+      isProcessingSnippet = true;
+
+      const fieldName = input.dataset.field;
+
+      // 현재 selection에서 조합 중인 텍스트 가져오기
+      const sel = window.getSelection();
+      let composingText = '';
+      if (sel.rangeCount > 0 && isComposing) {
+        const range = sel.getRangeAt(0);
+        // 조합 중인 텍스트는 selection 범위에 있을 수 있음
+        composingText = sel.toString() || '';
+      }
+
+      // 현재 textContent + 조합 중인 텍스트
+      let value = input.textContent || '';
+      // 조합 중이면 IME가 아직 커밋하지 않은 텍스트를 추가하지 않음 (이미 포함되어 있음)
+      value = value.replace(/[\u00A0\s]+/g, ' ').trim();
+
+      console.log('[Input Enter] value:', value, 'composing:', isComposing);
+
+      // 값 저장
+      if (fieldName) {
+        snippetFieldValues[fieldName] = value;
+        console.log('[Input Enter] Field saved:', fieldName, '=', value);
+      }
+
+      // IME 조합 취소
+      isComposing = false;
+      input.blur();
+      input.contentEditable = 'false';
+
+      // 폼 처리
+      setTimeout(() => {
+        snippetFieldIndex++;
+        const formContainer = editor.querySelector('.snippet-form');
+
+        if (snippetFieldIndex < snippetFields.length) {
+          showNextFieldInline(formContainer);
+          isProcessingSnippet = false;
+        } else {
+          // 마지막 필드 - 실행
+          const snippet = currentSnippetForForm;
+          const values = getFormValues();
+          console.log('[Input Enter] Executing with values:', values);
+
+          deleteSnippetForm();
+
+          setTimeout(async () => {
+            editor.focus();
+            // 폼 삭제 후 메모장 전체 내용 가져오기
+            const editorContent = getPlainText().trim();
+            if (snippet.isManifest) {
+              const cfg = JSON.parse(snippet.config);
+              await window.api.executeManifestTool(cfg.toolId, snippet.shortcut, { ...values, editorContent });
+            } else {
+              await window.api.executeSnippet(snippet.id, JSON.stringify(values), editorContent);
+            }
+            triggerSave();
+            isProcessingSnippet = false;
+          }, 50);
+        }
+      }, 30);
+    }
+  });
+  input.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  });
+  input.addEventListener('beforeinput', (e) => {
+    if (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') {
+      e.preventDefault();
+    }
+  });
+
+  // 포커스
+  setTimeout(() => {
+    input.focus();
+    const sel = window.getSelection();
+    const r = document.createRange();
+    r.selectNodeContents(input);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }, 10);
+}
+
+// 폼에서 값 추출
+function getFormValues() {
+  // 순차 입력 모드면 저장된 값 반환
+  return { ...snippetFieldValues };
+}
+
+// 폼 삭제 (인라인 폼 제거)
+function deleteSnippetForm() {
+  snippetFormMode = false;
+  currentSnippetForForm = null;
+  matchedSnippet = null;
+  snippetFields = [];
+  snippetFieldIndex = 0;
+  snippetFieldValues = {};
+
+  // 인라인 폼 컨테이너 제거
+  const formContainer = editor.querySelector('.snippet-form');
+  if (formContainer) {
+    // 폼 뒤의 모든 형제 노드도 제거 (IME 잔여 문자)
+    while (formContainer.nextSibling) {
+      formContainer.nextSibling.remove();
+    }
+    formContainer.remove();
+  }
+  editor.normalize();
+
+  // 에디터의 contenteditable 복원
+  editor.contentEditable = 'true';
+}
+
+// Enter 키 처리 (document 레벨에서 캡처) - 스니펫 매치 처리용
+document.addEventListener('keydown', async (e) => {
+  // Enter 키만 처리
+  if (e.key !== 'Enter') return;
+
+  // 폼 모드일 때는 input 핸들러가 처리하므로 여기서는 무시
+  if (snippetFormMode) {
+    return;
+  }
+
+  console.log('[Enter] Key pressed, isProcessingSnippet:', isProcessingSnippet);
+
+  // 중복 실행 방지
+  if (isProcessingSnippet) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+
+  const match = editor.querySelector('.snippet-match:not(.snippet-form)');
+
+  console.log('[Enter] match:', !!match, 'matchedSnippet:', !!matchedSnippet, 'snippetFormMode:', snippetFormMode);
+
+  // 스니펫 매치가 없으면 무시
+  if (!match) return;
+
+  // match는 있지만 matchedSnippet이 없는 경우 복구 시도
+  if (match && !matchedSnippet) {
+    const matchText = match.textContent;
+    // 트리거 문자 제거하고 키워드 추출
+    const keyword = matchText.startsWith(snippetTrigger) ? matchText.slice(1) : matchText;
+
+    // 스니펫 목록에서 찾기
+    const foundSnippet = snippets.find(s =>
+      s.shortcut.toLowerCase() === keyword.toLowerCase()
+    );
+
+    if (foundSnippet) {
+      console.log('[Enter] Recovered matchedSnippet from DOM:', foundSnippet.shortcut);
+      matchedSnippet = foundSnippet;
+    } else {
+      // 복구 실패 - 매치 해제하고 정상적인 Enter 동작 허용
+      console.log('[Enter] Could not recover snippet, clearing match');
+      clearMatch();
+      return; // 다음 핸들러(리스트 자동완성 등)가 처리하도록
+    }
+  }
+
+  // 매치가 있으면 폼 열기 또는 바로 실행
+  if (match && matchedSnippet) {
+    e.preventDefault();
+    e.stopPropagation();
+    isProcessingSnippet = true;
+
+    const snippet = matchedSnippet;
+    console.log('[Enter] Snippet object:', snippet);
+
+    let config;
+    try {
+      config = JSON.parse(snippet.config);
+    } catch (parseErr) {
+      console.error('[Enter] Failed to parse snippet config:', parseErr, snippet.config);
+      isProcessingSnippet = false;
+      return;
+    }
+
+    // 매니페스트: config.fields 사용, 기존: body에서 추출
+    const fields = snippet.isManifest ? (config.fields || []) : extractFields(config.body);
+    console.log('[Enter] Fields:', fields, 'isManifest:', snippet.isManifest);
+
+    if (fields.length > 0) {
+      // blur 전에 match 내용 저장 (IME 조합 중인 글자가 추가되기 전)
+      const matchTextBeforeBlur = match.textContent;
+      console.log('[Enter] Match text before blur:', matchTextBeforeBlur);
+
+      // IME 조합 취소
+      isComposing = false;
+
+      // blur로 IME 조합 종료
+      editor.blur();
+
+      // blur 후 DOM 업데이트 대기
+      setTimeout(() => {
+        // blur 후 match에 추가된 글자 제거 (원래 값으로 복원)
+        const currentMatch = editor.querySelector('.snippet-match:not(.snippet-form)');
+        if (currentMatch && currentMatch.textContent !== matchTextBeforeBlur) {
+          console.log('[Enter] Match text after blur:', currentMatch.textContent, '-> restoring to:', matchTextBeforeBlur);
+          currentMatch.textContent = matchTextBeforeBlur;
+        }
+
+        // match 뒤에 추가된 텍스트 노드도 제거 (IME 잔여 문자)
+        if (currentMatch) {
+          while (currentMatch.nextSibling && currentMatch.nextSibling.nodeType === Node.TEXT_NODE) {
+            const siblingText = currentMatch.nextSibling.textContent.trim();
+            if (siblingText.length <= 2) { // 짧은 잔여 문자만 제거
+              currentMatch.nextSibling.remove();
+            } else {
+              break;
+            }
+          }
+        }
+
+        expandSnippetForm(fields, snippet);
+        isProcessingSnippet = false;
+      }, 50);
+    } else {
+      // 필드 없으면 바로 실행
+      const content = snippetContent.trim();
+      console.log('[Enter] No fields, executing directly. content:', content);
+
+      // 매치 부분 삭제 (Promise 반환) - IME 커밋 완료 후 실행
+      deleteMatch().then(async () => {
+        try {
+          editor.focus();
+          // 단축어 삭제 후 메모장 전체 내용 가져오기
+          const editorContent = getPlainText().trim();
+          // 매니페스트 도구 vs 기존 스니펫 분기
+          console.log('[Snippet] Executing:', snippet.isManifest ? 'manifest' : 'db', snippet.id || snippet.shortcut, 'content:', content, 'editorContent length:', editorContent.length);
+          if (snippet.isManifest) {
+            const cfg = JSON.parse(snippet.config);
+            console.log('[Snippet] Manifest config:', cfg);
+            const result = await window.api.executeManifestTool(cfg.toolId, snippet.shortcut, { content, editorContent });
+            console.log('[Snippet] Manifest result:', result);
+          } else {
+            console.log('[Snippet] DB snippet id:', snippet.id);
+            const result = await window.api.executeSnippet(snippet.id, content, editorContent);
+            console.log('[Snippet] Execute result:', result);
+          }
+          triggerSave();
+        } catch (execErr) {
+          console.error('[Snippet] Execution error:', execErr);
+        } finally {
+          isProcessingSnippet = false;
+        }
+      }).catch(err => {
+        console.error('[Snippet] deleteMatch error:', err);
+        isProcessingSnippet = false;
+      });
+    }
+    return;
+  }
+}, true);
+
+// ESC 키 처리 (스니펫 매치 취소 - 텍스트 유지)
+// 폼 모드는 input 핸들러가 처리
+let lastEscTime = 0;
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+
+  // 중복 ESC 방지 (100ms 이내 재입력 무시)
+  const now = Date.now();
+  if (now - lastEscTime < 100) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    return;
+  }
+  lastEscTime = now;
+
+  // 스니펫 관련 요소 체크 (DOM에서 직접 확인)
+  const snippetMatchEl = editor.querySelector('span.snippet-match');
+  const snippetFormEl = editor.querySelector('.snippet-form');
+
+  // 폼 모드일 때는 input 핸들러가 처리하므로 여기서는 무시
+  if (snippetFormMode) {
+    return;
+  }
+
+  // 스니펫 매치나 폼이 있으면 취소만 (창 닫지 않음)
+  if (snippetMatchEl || snippetFormEl || matchedSnippet) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+
+    // blur 전에 매치 텍스트 저장
+    const matchText = snippetMatchEl ? snippetMatchEl.textContent : '';
+
+    // IME 조합 취소를 위해 blur
+    isComposing = false;
+    editor.blur();
+
+    setTimeout(() => {
+      // blur 후 매치 요소 다시 찾기
+      const currentMatch = editor.querySelector('span.snippet-match');
+      if (currentMatch) {
+        // IME로 인해 추가된 글자 제거 (원래 텍스트로 복원)
+        if (currentMatch.textContent !== matchText) {
+          currentMatch.textContent = matchText;
+        }
+        // 매치를 텍스트로 교체
+        const text = document.createTextNode(currentMatch.textContent);
+        currentMatch.parentNode.replaceChild(text, currentMatch);
+        editor.normalize();
+      }
+      matchedSnippet = null;
+
+      editor.focus();
+    }, 20);
+    return;
+  }
+
+  // 스니펫 관련 없으면 창 닫기
+  e.preventDefault();
+  window.api.closeWindow();
+}, true);
+
+// 입력 감지 - ASCII 트리거 키는 IME 상태와 무관하게 체크
+editor.addEventListener('input', () => {
+  // 트리거 키가 ASCII인 경우 (/, #, @ 등) IME 상태 무시
+  const triggerIsAscii = snippetTrigger && snippetTrigger.charCodeAt(0) < 128;
+
+  if (triggerIsAscii) {
+    // ASCII 트리거는 항상 체크
+    setTimeout(checkSnippetTrigger, 20);
+  } else if (!isComposing) {
+    // 한글 트리거는 조합 완료 후 체크
+    setTimeout(checkSnippetTrigger, 20);
+  }
+});
+
+// keydown에서도 ASCII 트리거 감지 (더 빠른 반응)
+editor.addEventListener('keydown', (e) => {
+  // 트리거 키 입력 시 isComposing 강제 리셋 (ASCII 키)
+  if (e.key === snippetTrigger && e.key.charCodeAt(0) < 128) {
+    isComposing = false;
+  }
+}, true);
+
+// ===== License Manager =====
+const SYNC_SERVER_URL = 'http://localhost:3000';
+
+class LicenseManager {
+  constructor() {
+    this.license = null;
+    this.verificationInterval = null;
+  }
+
+  async init() {
+    // 저장된 라이센스 정보 로드
+    this.license = await window.api.getLicense();
+
+    if (!this.license?.licenseKey) {
+      console.log('[License] No license found');
+      return;
+    }
+
+    // 앱 시작 시 검증
+    await this.verify();
+
+    // 24시간마다 주기적 검증
+    this.verificationInterval = setInterval(() => {
+      this.verify();
+    }, 24 * 60 * 60 * 1000);
+  }
+
+  async verify() {
+    if (!this.license?.licenseKey) return;
+
+    try {
+      const machineId = await window.api.getMachineId();
+      const result = await this.verifyOnServer(this.license.licenseKey, machineId);
+
+      if (result.valid) {
+        // 검증 성공 - 캐시 업데이트
+        await window.api.cacheLicenseVerification({
+          ...result,
+          verifiedAt: new Date().toISOString()
+        });
+        console.log('[License] Verification successful');
+      } else if (result.expired) {
+        console.warn('[License] License expired');
+        this.handleInvalidLicense('expired');
+      } else if (result.error === 'cancelled') {
+        console.warn('[License] License cancelled');
+        this.handleInvalidLicense('cancelled');
+      } else {
+        // 네트워크 오류 등 - 캐시 확인
+        await this.checkCacheValidity();
+      }
+    } catch (e) {
+      console.error('[License] Verification error:', e);
+      // 오프라인 - 캐시 확인
+      await this.checkCacheValidity();
+    }
+  }
+
+  async verifyOnServer(licenseKey, machineId) {
+    const res = await fetch(`${SYNC_SERVER_URL}/api/license/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ licenseKey, machineId })
+    });
+    return await res.json();
+  }
+
+  async checkCacheValidity() {
+    if (!this.license?.cachedVerification) {
+      this.handleInvalidLicense('no_cache');
+      return;
+    }
+
+    const cachedTime = new Date(this.license.cachedVerification.verifiedAt);
+    const now = new Date();
+    const daysSinceVerification = (now - cachedTime) / (1000 * 60 * 60 * 24);
+
+    if (daysSinceVerification > 7) {
+      console.warn('[License] Cache expired (7 days grace period)');
+      this.handleInvalidLicense('cache_expired');
+    } else {
+      console.log('[License] Using cached verification (offline mode)');
+    }
+  }
+
+  handleInvalidLicense(reason) {
+    console.warn('[License] Invalid license:', reason);
+    // 필요시 UI 알림 등 추가 처리
+  }
+
+  cleanup() {
+    if (this.verificationInterval) {
+      clearInterval(this.verificationInterval);
+      this.verificationInterval = null;
+    }
+  }
+}
+
+const licenseManager = new LicenseManager();
+
+// Initialize
+loadMemo(-1);
+editor.focus();
+
+// License 초기화
+licenseManager.init();
+
+// ===== Window Cleanup (메모리 누수 방지) =====
+function cleanupAllResources() {
+  // 타이머 정리
+  clearTimeout(saveTimeout);
+  clearTimeout(linkProcessTimeout);
+  clearTimeout(editorScrollTimeout);
+  clearTimeout(memoListScrollTimeout);
+
+  // 라이센스 매니저 정리
+  licenseManager.cleanup();
+
+  // 스니펫 상태 초기화
+  isProcessingSnippet = false;
+  snippetFormMode = false;
+  currentSnippetForForm = null;
+  matchedSnippet = null;
+}
+
+// 창 닫힐 때 정리
+window.addEventListener('beforeunload', cleanupAllResources);
+
+// 창 표시/숨김 처리
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible') {
+    // 새 메모 모드면 스킵 (onCreateNewMemo에서 처리)
+    if (pendingNewMemo) return;
+
+    // 스니펫 목록 갱신 (설정에서 변경된 경우 반영)
+    await loadSnippets();
+    await loadTriggerKey();
+
+    // 창이 다시 보일 때 최신 메모로 새로고침
+    memos = await window.api.getAll();
+    if (memos.length > 0) {
+      await loadMemo(0); // 항상 최신 메모 로드
+    }
+    renderMemoList();
+  }
+});

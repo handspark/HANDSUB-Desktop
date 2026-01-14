@@ -1,0 +1,49 @@
+{
+  "name": "HandSub",
+  "version": "1.1.7",
+  "description": "미니멀 메모장",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:mac": "rm -rf dist && electron-builder --mac --dir && cp -R dist/mac-arm64/handsub.app /Applications/",
+    "build:win": "electron-builder --win --dir",
+    "dist:mac": "rm -rf dist && electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "release:mac": "electron-builder --mac --publish always",
+    "release:win": "electron-builder --win --publish always"
+  },
+  "build": {
+    "appId": "com.handsub.app",
+    "productName": "HandSub",
+    "icon": "logoo.png",
+    "publish": {
+      "provider": "generic",
+      "url": "https://api.handsub.com/updates"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "logoo.png"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "logoo.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.5.0",
+    "electron-updater": "^6.7.3"
+  }
+}
