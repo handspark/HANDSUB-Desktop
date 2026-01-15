@@ -4,11 +4,31 @@
 
 ## 설치
 
+### macOS
+
 ```bash
 git clone https://github.com/handspark/HandSub-Desktop.git
 cd HandSub-Desktop
 npm install
-npm start
+npm run build:mac
+```
+
+```bash
+open /Applications/HandSub.app
+```
+⚠️ 첫 실행 시: 우클릭 → 열기 (보안 경고 우회)
+
+### Windows
+
+```bash
+git clone https://github.com/handspark/HandSub-Desktop.git
+cd HandSub-Desktop
+npm install
+npm run build:win
+```
+
+```bash
+./dist/win-unpacked/HandSub.exe
 ```
 
 ## 주요 기능
