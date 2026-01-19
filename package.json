@@ -5,7 +5,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build:mac": "rm -rf dist && electron-builder --mac --dir && cp -R dist/mac-arm64/handsub.app /Applications/",
+    "build:mac": "rm -rf dist && electron-builder --mac --dir && rm -rf /Applications/HandSub.app && cp -R dist/mac-arm64/HandSub.app /Applications/",
     "build:win": "electron-builder --win --dir",
     "dist:mac": "rm -rf dist && electron-builder --mac",
     "dist:win": "electron-builder --win",
