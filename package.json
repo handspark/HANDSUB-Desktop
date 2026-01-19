@@ -28,7 +28,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "logoo.png"
@@ -44,6 +46,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.5.0",
-    "electron-updater": "^6.7.3"
+    "electron-updater": "^6.7.3",
+    "node-notifier": "^10.0.1"
   }
 }

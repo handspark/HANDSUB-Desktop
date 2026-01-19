@@ -91,6 +91,7 @@ function cleanupAllResources() {
   clearTimeout(timers.linkProcessTimeout);
   clearTimeout(timers.editorScrollTimeout);
   clearTimeout(timers.memoListScrollTimeout);
+  clearTimeout(timers.timeHighlightTimeout);
 
   licenseManager.cleanup();
 

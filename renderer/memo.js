@@ -3,8 +3,9 @@
  */
 
 import { elements, memoState, timers, snippetState } from './state.js';
-import { getEditorContent, setEditorContent, getPlainText, stripInlineHandlers, applyStrikethrough } from './editor.js';
+import { getEditorContent, setEditorContent, getPlainText, getPlainTextFromHtml, stripInlineHandlers, applyStrikethrough, highlightTodoTimes } from './editor.js';
 import { clearLinkPreviews, processLinksInEditor } from './linkPreview.js';
+import { parseAllTodoTimes } from './timeParser.js';
 
 const { editor, statusbar, sidebar } = elements;
 
@@ -105,6 +106,9 @@ export async function loadMemo(index) {
 
     // 체크된 항목 취소선 적용
     applyStrikethrough();
+
+    // 할일 시간 하이라이트
+    highlightTodoTimes();
   }
 }
 
@@ -148,6 +152,88 @@ export async function saveCurrentContent() {
     memoState.lastSavedContent = content;
   }
   updateStatusbar(new Date().toISOString());
+
+  // 리마인더 자동 등록 (디바운싱 - 타이핑 완료 후 등록)
+  scheduleReminderSync(content, memoState.currentMemo?.id);
+}
+
+// 리마인더 등록 디바운싱 (2초 대기)
+let reminderSyncTimeout = null;
+function scheduleReminderSync(content, memoId) {
+  clearTimeout(reminderSyncTimeout);
+  reminderSyncTimeout = setTimeout(() => {
+    syncReminders(content, memoId);
+  }, 2000);
+}
+
+// 마지막 등록된 리마인더 캐시 (중복 방지)
+let lastRegisteredReminders = new Set();
+
+// 리마인더 동기화 (체크박스 시간 파싱 → 리마인더 등록)
+async function syncReminders(content, memoId) {
+  try {
+    const plainText = getPlainTextFromHtml(content);
+    const todoTimes = parseAllTodoTimes(plainText);
+
+    // 완료된 체크박스의 리마인더 삭제
+    const completedTodos = todoTimes.filter(t => t.isChecked);
+    for (const todo of completedTodos) {
+      const todoText = todo.cleanText;
+      if (todoText && todoText.length >= 2) {
+        await window.api.deleteReminderByText(todoText);
+      }
+    }
+
+    // 미완료 체크박스만 리마인더 등록
+    const uncompletedTodos = todoTimes.filter(t => !t.isChecked);
+    const currentReminders = new Set();
+
+    for (const todo of uncompletedTodos) {
+      // 할일 텍스트 (시간/날짜 제외한 순수 내용)
+      const todoText = todo.cleanText;
+      if (!todoText || todoText.length < 2) continue; // 너무 짧으면 무시
+
+      // 중복 체크 키 (날짜 오프셋도 포함)
+      const dayOffset = todo.dayOffset || 0;
+      const reminderKey = `${dayOffset}:${todo.hour24}:${todo.minute}:${todoText}`;
+      currentReminders.add(reminderKey);
+
+      // 이미 등록된 리마인더면 스킵
+      if (lastRegisteredReminders.has(reminderKey)) continue;
+
+      // 오늘 날짜 + dayOffset + 파싱된 시간으로 리마인더 시간 계산
+      const now = new Date();
+      let targetDate = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() + dayOffset,
+        todo.hour24,
+        todo.minute
+      );
+      let remindAt = targetDate.getTime();
+
+      // dayOffset이 0이고 이미 지난 시간이면 내일로 설정
+      if (dayOffset === 0 && remindAt <= Date.now()) {
+        targetDate.setDate(targetDate.getDate() + 1);
+        remindAt = targetDate.getTime();
+      }
+
+      // 기존 리마인더 삭제 후 새로 등록
+      await window.api.deleteReminderByText(todoText);
+      await window.api.addReminder({
+        memoId,
+        text: todoText,
+        remindAt
+      });
+
+      console.log('[Reminder] Registered:', todoText, 'at', new Date(remindAt).toLocaleString());
+    }
+
+    // 캐시 업데이트
+    lastRegisteredReminders = currentReminders;
+  } catch (e) {
+    console.error('[Reminder] Sync error:', e);
+  }
 }
 
 export async function cleanupOnClose() {

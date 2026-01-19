@@ -41,7 +41,8 @@ export const timers = {
   saveTimeout: null,
   linkProcessTimeout: null,
   editorScrollTimeout: null,
-  memoListScrollTimeout: null
+  memoListScrollTimeout: null,
+  timeHighlightTimeout: null
 };
 
 // ===== 미디어 상태 =====

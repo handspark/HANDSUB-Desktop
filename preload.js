@@ -109,6 +109,15 @@ contextBridge.exposeInMainWorld('api', {
   removeGroupMember: (groupId, email) => ipcRenderer.invoke('group-remove-member', groupId, email),
   getContactsByGroup: (groupId) => ipcRenderer.invoke('contacts-by-group', groupId),
 
+  // ===== Reminder API =====
+  addReminder: (data) => ipcRenderer.invoke('reminder-add', data),
+  deleteReminder: (id) => ipcRenderer.invoke('reminder-delete', id),
+  deleteReminderByText: (text) => ipcRenderer.invoke('reminder-delete-by-text', text),
+  getReminders: () => ipcRenderer.invoke('reminder-list'),
+  updateReminder: (data) => ipcRenderer.invoke('reminder-update', data),
+  testReminder: () => ipcRenderer.invoke('reminder-test'),
+  clearAllReminders: () => ipcRenderer.invoke('reminder-clear-all'),
+
   // ===== Legacy (for compatibility) =====
   getByUuid: (uuid) => ipcRenderer.invoke('memo-get-by-uuid', uuid),
 

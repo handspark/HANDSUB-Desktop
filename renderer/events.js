@@ -3,7 +3,7 @@
  */
 
 import { elements, memoState, timers, snippetState } from './state.js';
-import { getPlainText, insertTextAtCursor, processCheckboxes, setEditorContent, applyStrikethrough } from './editor.js';
+import { getPlainText, insertTextAtCursor, processCheckboxes, setEditorContent, applyStrikethrough, highlightTodoTimes } from './editor.js';
 import { processLinksInEditor, clearLinkPreviews } from './linkPreview.js';
 import { loadMemo, saveCurrentContent, cleanupOnClose, triggerSave, updateStatusbar } from './memo.js';
 import { toggleSidebar, renderMemoList, setLoadMemoFn, updateEditorPosition } from './sidebar.js';
@@ -41,6 +41,12 @@ export function initEditorInputEvents() {
     triggerSave();
     processLinksInEditor();
     processCheckboxes();
+    // 시간 하이라이트는 blur 시에만 적용 (커서 방해 방지)
+  });
+
+  // 에디터 포커스 아웃 시 시간 하이라이트 적용
+  editor.addEventListener('blur', () => {
+    highlightTodoTimes();
   });
 
   // 붙여넣기 즉시 저장

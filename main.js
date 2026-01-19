@@ -1,4 +1,5 @@
-const { app, BrowserWindow, globalShortcut, nativeTheme, Tray, Menu, nativeImage, screen, ipcMain, shell, safeStorage } = require('electron');
+const { app, BrowserWindow, globalShortcut, nativeTheme, Tray, Menu, nativeImage, screen, ipcMain, shell, safeStorage, Notification } = require('electron');
+const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -299,6 +300,45 @@ db.exec(`
     FOREIGN KEY (group_id) REFERENCES contact_groups(id) ON DELETE CASCADE
   );
 `);
+
+// 리마인더 테이블
+db.exec(`
+  CREATE TABLE IF NOT EXISTS reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    memo_id INTEGER,
+    text TEXT NOT NULL,
+    remind_at INTEGER NOT NULL,
+    notified INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (memo_id) REFERENCES memos(id) ON DELETE CASCADE
+  );
+`);
+
+// 리마인더 컬럼 마이그레이션
+try {
+  const reminderColumns = db.prepare("PRAGMA table_info(reminders)").all().map(c => c.name);
+  if (!reminderColumns.includes('notified')) {
+    db.exec('ALTER TABLE reminders ADD COLUMN notified INTEGER DEFAULT 0');
+  }
+  if (!reminderColumns.includes('text')) {
+    db.exec('ALTER TABLE reminders ADD COLUMN text TEXT');
+  }
+  if (!reminderColumns.includes('memo_id')) {
+    db.exec('ALTER TABLE reminders ADD COLUMN memo_id INTEGER');
+  }
+  if (!reminderColumns.includes('remind_at')) {
+    db.exec('ALTER TABLE reminders ADD COLUMN remind_at INTEGER');
+  }
+} catch (e) {
+  // 테이블이 없으면 무시 (위에서 생성됨)
+}
+
+// 리마인더 인덱스
+try {
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_reminders_time ON reminders(remind_at, notified)`);
+} catch (e) {
+  // 이미 존재하면 무시
+}
 
 // snippets 테이블 동기화 컬럼 추가 (마이그레이션)
 const snippetColumns = db.prepare("PRAGMA table_info(snippets)").all().map(c => c.name);
@@ -2230,6 +2270,239 @@ ipcMain.handle('memo-unread-count', () => {
   }
 });
 
+// ===== 리마인더 시스템 =====
+
+// 리마인더 스케줄러 (1분마다 체크)
+let reminderInterval = null;
+
+function startReminderScheduler() {
+  if (reminderInterval) return;
+
+  reminderInterval = setInterval(() => {
+    checkReminders();
+  }, 60000); // 1분마다 체크
+
+  // 앱 시작 시 즉시 한 번 체크
+  checkReminders();
+}
+
+function stopReminderScheduler() {
+  if (reminderInterval) {
+    clearInterval(reminderInterval);
+    reminderInterval = null;
+  }
+}
+
+function checkReminders() {
+  try {
+    const now = Date.now();
+    // 아직 알림 안 보낸 리마인더 중 시간이 된 것들
+    const dueReminders = db.prepare(`
+      SELECT * FROM reminders
+      WHERE notified = 0 AND remind_at <= ?
+      ORDER BY remind_at ASC
+    `).all(now);
+
+    dueReminders.forEach(reminder => {
+      showReminderNotification(reminder);
+      // 알림 보냈다고 표시
+      db.prepare('UPDATE reminders SET notified = 1 WHERE id = ?').run(reminder.id);
+    });
+  } catch (e) {
+    console.error('[Reminder] Check error:', e);
+  }
+}
+
+function showReminderNotification(reminder) {
+  console.log('[Reminder] Showing notification:', reminder.text);
+
+  // macOS 네이티브 알림
+  const notification = new Notification({
+    title: 'handsub',
+    body: reminder.text,
+    silent: false
+  });
+
+  notification.on('click', () => {
+    const wins = BrowserWindow.getAllWindows();
+    if (wins.length > 0) {
+      wins[0].show();
+      wins[0].focus();
+    }
+  });
+
+  notification.show();
+}
+
+// 앱 내부 알림 창
+function showInAppNotification(message) {
+  const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
+
+  const notifyWin = new BrowserWindow({
+    width: 320,
+    height: 100,
+    x: screenWidth - 340,
+    y: 20,
+    frame: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    transparent: true,
+    hasShadow: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
+
+  const isDark = nativeTheme.shouldUseDarkColors;
+  const bgColor = isDark ? '#2d2d2d' : '#ffffff';
+  const textColor = isDark ? '#ffffff' : '#1a1a1a';
+  const borderColor = isDark ? '#3d3d3d' : '#e5e5e5';
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          background: ${bgColor};
+          color: ${textColor};
+          border-radius: 12px;
+          border: 1px solid ${borderColor};
+          overflow: hidden;
+          cursor: pointer;
+          height: 100vh;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          padding: 16px;
+        }
+        .title {
+          font-size: 13px;
+          font-weight: 600;
+          margin-bottom: 6px;
+          opacity: 0.7;
+        }
+        .message {
+          font-size: 15px;
+          line-height: 1.4;
+        }
+      </style>
+    </head>
+    <body onclick="window.close()">
+      <div class="title">⏰ handsub 알림</div>
+      <div class="message">${message}</div>
+    </body>
+    </html>
+  `;
+
+  notifyWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+
+  // 5초 후 자동 닫기
+  setTimeout(() => {
+    if (!notifyWin.isDestroyed()) {
+      notifyWin.close();
+    }
+  }, 5000);
+
+  // 클릭 시 메인 창 열기
+  notifyWin.webContents.on('before-input-event', () => {
+    const wins = BrowserWindow.getAllWindows().filter(w => w !== notifyWin);
+    if (wins.length > 0) {
+      wins[0].show();
+      wins[0].focus();
+    }
+  });
+}
+
+// 리마인더 추가
+ipcMain.handle('reminder-add', (_, { memoId, text, remindAt }) => {
+  try {
+    const result = db.prepare(`
+      INSERT INTO reminders (memo_id, text, remind_at)
+      VALUES (?, ?, ?)
+    `).run(memoId || null, text, remindAt);
+    return { success: true, id: result.lastInsertRowid };
+  } catch (e) {
+    console.error('[Reminder] Add error:', e);
+    return { success: false, error: e.message };
+  }
+});
+
+// 리마인더 삭제
+ipcMain.handle('reminder-delete', (_, id) => {
+  try {
+    db.prepare('DELETE FROM reminders WHERE id = ?').run(id);
+    return { success: true };
+  } catch (e) {
+    console.error('[Reminder] Delete error:', e);
+    return { success: false, error: e.message };
+  }
+});
+
+// 메모별 리마인더 삭제 (텍스트 기준)
+ipcMain.handle('reminder-delete-by-text', (_, text) => {
+  try {
+    db.prepare('DELETE FROM reminders WHERE text = ? AND notified = 0').run(text);
+    return { success: true };
+  } catch (e) {
+    console.error('[Reminder] Delete by text error:', e);
+    return { success: false, error: e.message };
+  }
+});
+
+// 리마인더 목록 조회
+ipcMain.handle('reminder-list', () => {
+  try {
+    return db.prepare(`
+      SELECT * FROM reminders
+      WHERE notified = 0
+      ORDER BY remind_at ASC
+    `).all();
+  } catch (e) {
+    console.error('[Reminder] List error:', e);
+    return [];
+  }
+});
+
+// 모든 리마인더 삭제 (초기화)
+ipcMain.handle('reminder-clear-all', () => {
+  try {
+    db.prepare('DELETE FROM reminders').run();
+    console.log('[Reminder] All reminders cleared');
+    return { success: true };
+  } catch (e) {
+    console.error('[Reminder] Clear all error:', e);
+    return { success: false, error: e.message };
+  }
+});
+
+// 리마인더 업데이트 (시간 변경)
+ipcMain.handle('reminder-update', (_, { id, remindAt }) => {
+  try {
+    db.prepare('UPDATE reminders SET remind_at = ?, notified = 0 WHERE id = ?').run(remindAt, id);
+    return { success: true };
+  } catch (e) {
+    console.error('[Reminder] Update error:', e);
+    return { success: false, error: e.message };
+  }
+});
+
+// 알림 테스트 (즉시 알림 보내기)
+ipcMain.handle('reminder-test', () => {
+  try {
+    showReminderNotification({ text: '알림 테스트입니다!' });
+    console.log('[Reminder] Test notification sent');
+    return { success: true };
+  } catch (e) {
+    console.error('[Reminder] Test error:', e);
+    return { success: false, error: e.message };
+  }
+});
+
 // 받은 메모 조회 helper
 async function getInboxMemos() {
   try {
@@ -2334,9 +2607,13 @@ ipcMain.on('force-close', (event) => {
 app.whenReady().then(() => {
   const firstRun = isFirstRun();
 
+  // 앱 이름 설정 (알림에 표시됨)
+  app.setName('handsub');
+
   createWindow();
   createTray();
   initAutoLaunch(); // 자동 실행 설정 적용
+  startReminderScheduler(); // 리마인더 스케줄러 시작
 
   // Dock에 표시 (주석 해제하면 트레이 전용 앱으로 변경)
   // if (process.platform === 'darwin') {
