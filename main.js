@@ -2330,11 +2330,6 @@ function stopReminderScheduler() {
 
 function checkReminders() {
   try {
-    // 알림이 비활성화되어 있으면 스킵
-    if (!getNotificationEnabled()) {
-      return;
-    }
-
     const now = Date.now();
     // 아직 알림 안 보낸 리마인더 중 시간이 된 것들
     const dueReminders = db.prepare(`
@@ -2343,9 +2338,14 @@ function checkReminders() {
       ORDER BY remind_at ASC
     `).all(now);
 
+    const notificationEnabled = getNotificationEnabled();
+
     dueReminders.forEach(reminder => {
-      showReminderNotification(reminder);
-      // 알림 보냈다고 표시
+      // 알림 활성화 시에만 실제 알림 전송
+      if (notificationEnabled) {
+        showReminderNotification(reminder);
+      }
+      // 비활성화 중이라도 지난 리마인더는 처리 완료로 표시
       db.prepare('UPDATE reminders SET notified = 1 WHERE id = ?').run(reminder.id);
     });
   } catch (e) {
