@@ -2513,9 +2513,12 @@ function showInAppNotification(message) {
   });
 }
 
-// 리마인더 추가
+// 리마인더 추가 (같은 텍스트 중복 방지)
 ipcMain.handle('reminder-add', (_, { memoId, text, remindAt }) => {
   try {
+    // 같은 텍스트의 미완료 리마인더가 있으면 먼저 삭제
+    db.prepare('DELETE FROM reminders WHERE text = ? AND notified = 0').run(text);
+
     const result = db.prepare(`
       INSERT INTO reminders (memo_id, text, remind_at)
       VALUES (?, ?, ?)
