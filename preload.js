@@ -118,6 +118,12 @@ contextBridge.exposeInMainWorld('api', {
   testReminder: () => ipcRenderer.invoke('reminder-test'),
   clearAllReminders: () => ipcRenderer.invoke('reminder-clear-all'),
 
+  // ===== Notification History API =====
+  getUnreadNotifications: () => ipcRenderer.invoke('notification-get-unread'),
+  markNotificationRead: (id) => ipcRenderer.invoke('notification-mark-read', id),
+  markAllNotificationsRead: () => ipcRenderer.invoke('notification-mark-all-read'),
+  deleteNotification: (id) => ipcRenderer.invoke('notification-delete', id),
+
   // ===== Legacy (for compatibility) =====
   getByUuid: (uuid) => ipcRenderer.invoke('memo-get-by-uuid', uuid),
 

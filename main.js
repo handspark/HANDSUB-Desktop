@@ -365,6 +365,26 @@ try {
   // 이미 존재하면 무시
 }
 
+// 알림 이력 테이블 (채팅 스타일 표시용)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS notification_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL DEFAULT 'reminder',
+    text TEXT NOT NULL,
+    memo_id INTEGER,
+    from_email TEXT,
+    read INTEGER DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+`);
+
+// 알림 이력 인덱스
+try {
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_notification_read ON notification_history(read, created_at)`);
+} catch (e) {
+  // 이미 존재하면 무시
+}
+
 // snippets 테이블 동기화 컬럼 추가 (마이그레이션)
 const snippetColumns = db.prepare("PRAGMA table_info(snippets)").all().map(c => c.name);
 if (!snippetColumns.includes('synced_at')) {
@@ -2356,6 +2376,16 @@ function checkReminders() {
 function showReminderNotification(reminder) {
   console.log('[Reminder] Showing notification:', reminder.text);
 
+  // 알림 이력에 저장
+  try {
+    db.prepare(`
+      INSERT INTO notification_history (type, text, memo_id, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run('reminder', reminder.text, reminder.memo_id || null, Date.now());
+  } catch (e) {
+    console.error('[Notification] History save error:', e);
+  }
+
   // macOS 네이티브 알림
   const notification = new Notification({
     title: 'handsub',
@@ -2543,6 +2573,79 @@ ipcMain.handle('reminder-test', () => {
   }
 });
 
+// ===== 알림 이력 API =====
+
+// 읽지 않은 알림 조회
+ipcMain.handle('notification-get-unread', () => {
+  try {
+    return db.prepare(`
+      SELECT * FROM notification_history
+      WHERE read = 0
+      ORDER BY created_at DESC
+      LIMIT 10
+    `).all();
+  } catch (e) {
+    console.error('[Notification] Get unread error:', e);
+    return [];
+  }
+});
+
+// 알림 읽음 처리
+ipcMain.handle('notification-mark-read', (_, id) => {
+  try {
+    db.prepare('UPDATE notification_history SET read = 1 WHERE id = ?').run(id);
+    return { success: true };
+  } catch (e) {
+    console.error('[Notification] Mark read error:', e);
+    return { success: false, error: e.message };
+  }
+});
+
+// 모든 알림 읽음 처리
+ipcMain.handle('notification-mark-all-read', () => {
+  try {
+    db.prepare('UPDATE notification_history SET read = 1 WHERE read = 0').run();
+    return { success: true };
+  } catch (e) {
+    console.error('[Notification] Mark all read error:', e);
+    return { success: false, error: e.message };
+  }
+});
+
+// 알림 삭제
+ipcMain.handle('notification-delete', (_, id) => {
+  try {
+    db.prepare('DELETE FROM notification_history WHERE id = ?').run(id);
+    return { success: true };
+  } catch (e) {
+    console.error('[Notification] Delete error:', e);
+    return { success: false, error: e.message };
+  }
+});
+
+// HTML에서 플레인 텍스트 미리보기 추출
+function getPlainTextPreview(html, maxLength = 50) {
+  if (!html) return '';
+  // HTML 태그 제거
+  let text = html
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/div>/gi, ' ')
+    .replace(/<\/p>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (text.length > maxLength) {
+    text = text.slice(0, maxLength) + '...';
+  }
+  return text;
+}
+
 // 받은 메모 조회 helper
 async function getInboxMemos() {
   try {
@@ -2708,6 +2811,41 @@ async function checkForNewMemos() {
     }
 
     if (newMemos.length > 0 && lastKnownInboxIds.length > 0) {
+      const notificationEnabled = getNotificationEnabled();
+
+      // 알림 이력에 저장 + OS 알림
+      for (const memo of newMemos) {
+        try {
+          const previewText = getPlainTextPreview(memo.content, 50);
+          const displayText = memo.senderEmail ? `${memo.senderEmail}: ${previewText}` : previewText;
+
+          // 알림 이력 저장
+          db.prepare(`
+            INSERT INTO notification_history (type, text, from_email, created_at)
+            VALUES (?, ?, ?, ?)
+          `).run('share', displayText, memo.senderEmail || null, Date.now());
+
+          // OS 알림 표시
+          if (notificationEnabled) {
+            const notification = new Notification({
+              title: memo.senderEmail || '새 메모',
+              body: previewText,
+              silent: false
+            });
+            notification.on('click', () => {
+              const wins = BrowserWindow.getAllWindows();
+              if (wins.length > 0) {
+                wins[0].show();
+                wins[0].focus();
+              }
+            });
+            notification.show();
+          }
+        } catch (e) {
+          console.error('[Notification] Share history save error:', e);
+        }
+      }
+
       // 새 메모 알림
       BrowserWindow.getAllWindows().forEach(w => {
         if (!w.isDestroyed()) {
