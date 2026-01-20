@@ -149,65 +149,9 @@ html, body {
   opacity: 0.5;
 }
 
-/* 할일 시간 하이라이트 */
+/* 할일 시간 - 일반 텍스트 스타일 */
 .todo-time {
-  background: light-dark(rgba(59, 130, 246, 0.15), rgba(96, 165, 250, 0.2));
-  color: light-dark(#1d4ed8, #93c5fd);
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 0.9em;
-  font-weight: 500;
-  margin: 0 2px;
-  position: relative;
-  cursor: default;
-}
-
-/* 시간이 곧 다가올 때 (30분 이내) */
-.todo-time.soon {
-  background: light-dark(rgba(245, 158, 11, 0.2), rgba(251, 191, 36, 0.25));
-  color: light-dark(#b45309, #fbbf24);
-  animation: pulse-soon 2s ease-in-out infinite;
-}
-
-/* 내일 일정 */
-.todo-time.next-day {
-  background: light-dark(rgba(139, 92, 246, 0.15), rgba(167, 139, 250, 0.2));
-  color: light-dark(#6d28d9, #a78bfa);
-}
-
-/* 호버 시 남은 시간 표시 */
-.todo-time::after {
-  content: attr(data-remaining);
-  position: absolute;
-  bottom: calc(100% + 4px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: light-dark(#1f2937, #374151);
-  color: #fff;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: normal;
-  white-space: nowrap;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.15s, visibility 0.15s;
-  pointer-events: none;
-  z-index: 100;
-}
-
-.todo-time:hover::after {
-  opacity: 1;
-  visibility: visible;
-}
-
-@keyframes pulse-soon {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.7;
-  }
+  /* 특별한 스타일 없이 일반 텍스트로 표시 */
 }
 
 /* Snippet match (명령어 선택) */
