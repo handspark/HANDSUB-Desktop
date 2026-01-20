@@ -20,16 +20,37 @@ open /Applications/HandSub.app
 
 ### Windows
 
-```bash
+#### 사전 요구사항
+
+Windows에서 빌드하려면 **Visual Studio Build Tools**가 필요합니다 (네이티브 모듈 컴파일용).
+
+**설치 방법 (택 1):**
+
+1. **winget 사용** (PowerShell 관리자 권한):
+```powershell
+winget install Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+```
+
+2. **직접 설치**:
+   - https://aka.ms/vs/17/release/vs_BuildTools.exe 다운로드
+   - 설치 시 **"C++를 사용한 데스크톱 개발"** 워크로드 선택
+
+#### 빌드
+
+```powershell
 git clone https://github.com/handspark/HandSub-Desktop.git
 cd HandSub-Desktop
 npm install
 npm run build:win
 ```
 
-```bash
-./dist/win-unpacked/HandSub.exe
+#### 실행
+
+```powershell
+.\dist\win-unpacked\HandSub.exe
 ```
+
+> **참고**: 프로젝트 경로에 한글이나 공백이 있으면 빌드가 실패할 수 있습니다. `C:\Dev\HandSub-Desktop` 같은 경로를 권장합니다.
 
 ## 주요 기능
 
