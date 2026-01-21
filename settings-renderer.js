@@ -644,6 +644,7 @@ const DEFAULT_AVATAR = 'https://www.gravatar.com/avatar/?d=mp&s=96';
 
 // 현재 라이센스 정보
 let currentLicense = null;
+let currentLicenseState = null; // 현재 UI 상태 추적 (재렌더링 방지)
 
 // 에러 표시
 function showLicenseError(msg) {
@@ -655,16 +656,48 @@ function hideLicenseError() {
   licenseError.classList.add('hidden');
 }
 
+// 로딩 상태 표시
+function showLicenseLoadingState() {
+  // 기존 상태 숨기기
+  licenseInputState.classList.add('hidden');
+  licenseActiveState.classList.add('hidden');
+  licenseExpiredState.classList.add('hidden');
+  hideLicenseError();
+
+  // 로딩 표시 (activeState 재활용, 로딩 텍스트로)
+  licenseActiveState.classList.remove('hidden');
+  userProfile.classList.remove('hidden');
+  userAvatar.src = DEFAULT_AVATAR;
+  userName.textContent = '확인 중...';
+  userEmail.textContent = '';
+  licenseTypeText.textContent = '-';
+  licenseDevices.textContent = '-';
+  expiryRow.classList.add('hidden');
+
+  currentLicenseState = 'loading';
+}
+
 // 라이센스 상태별 UI 표시
 function showLicenseInputState() {
+  // 이미 같은 상태면 스킵 (깜빡임 방지)
+  if (currentLicenseState === 'input') return;
+
   licenseInputState.classList.remove('hidden');
   licenseActiveState.classList.add('hidden');
   licenseExpiredState.classList.add('hidden');
   licenseKeyInput.value = '';
   hideLicenseError();
+
+  currentLicenseState = 'input';
 }
 
-function showLicenseActiveState(license) {
+function showLicenseActiveState(license, forceUpdate = false) {
+  // 이미 같은 상태 + 같은 라이센스면 스킵 (깜빡임 방지)
+  const licenseKey = license?.licenseKey || license?.email;
+  if (!forceUpdate && currentLicenseState === 'active' && currentLicense?.licenseKey === licenseKey) {
+    return;
+  }
+
   licenseInputState.classList.add('hidden');
   licenseActiveState.classList.remove('hidden');
   licenseExpiredState.classList.add('hidden');
@@ -698,9 +731,14 @@ function showLicenseActiveState(license) {
 
   // 기기 수
   licenseDevices.textContent = `${license.deviceCount || 1} / ${license.maxDevices || (license.type === 'lifetime' ? 2 : 3)}`;
+
+  currentLicenseState = 'active';
 }
 
 function showLicenseExpiredState(license) {
+  // 이미 같은 상태면 스킵
+  if (currentLicenseState === 'expired') return;
+
   licenseInputState.classList.add('hidden');
   licenseActiveState.classList.add('hidden');
   licenseExpiredState.classList.remove('hidden');
@@ -709,6 +747,8 @@ function showLicenseExpiredState(license) {
     const expDate = new Date(license.expiresAt);
     expiredDate.textContent = `만료일: ${expDate.toLocaleDateString('ko-KR')}`;
   }
+
+  currentLicenseState = 'expired';
 }
 
 // 라이센스 초기화
@@ -723,6 +763,7 @@ async function initLicense() {
     }
 
     currentLicense = saved;
+    let cacheValid = false;
 
     // 캐시가 있으면 먼저 즉시 UI 표시 (깜빡임 방지)
     if (saved.cachedVerification) {
@@ -738,10 +779,16 @@ async function initLicense() {
           fromCache: true
         };
         showLicenseActiveState(currentLicense);
+        cacheValid = true;
       }
     }
 
-    // 백그라운드에서 서버 검증 (UI는 이미 표시됨)
+    // 캐시 없으면 로딩 상태 표시
+    if (!cacheValid) {
+      showLicenseLoadingState();
+    }
+
+    // 서버 검증 (캐시 있으면 백그라운드, 없으면 포그라운드)
     const deviceFingerprint = await window.settingsApi.getMachineId();
     const result = await verifyLicenseOnServer(saved.licenseKey, deviceFingerprint);
 
@@ -759,21 +806,35 @@ async function initLicense() {
         user: result.user || saved.user || null,
         fromCache: false
       };
-      showLicenseActiveState(currentLicense);
+
+      // 캐시가 없었거나 정보가 변경된 경우만 UI 업데이트
+      if (!cacheValid) {
+        showLicenseActiveState(currentLicense, true);
+      }
     } else if (result.error === 'expired') {
       showLicenseExpiredState(saved);
     } else if (result.error === 'network_error') {
-      // 네트워크 오류 시 캐시 유지 (이미 표시됨)
-      console.log('[License] Using cached verification (offline)');
+      // 네트워크 오류 시
+      if (cacheValid) {
+        // 캐시 유지 (이미 표시됨)
+        console.log('[License] Using cached verification (offline)');
+      } else {
+        // 캐시도 없으면 입력 화면
+        showLicenseInputState();
+      }
     } else {
-      // 기타 오류 (invalid_key 등) - 캐시가 없거나 만료된 경우만 입력 화면
-      if (!saved.cachedVerification) {
+      // 기타 오류 (invalid_key 등)
+      if (!cacheValid) {
         showLicenseInputState();
       }
     }
   } catch (e) {
     console.error('License init error:', e);
     // 오프라인인 경우 - 캐시가 이미 표시되어 있으면 유지
+    if (currentLicenseState === 'active') {
+      return;
+    }
+
     const saved = await window.settingsApi.getLicense();
     if (saved?.cachedVerification) {
       const cachedTime = new Date(saved.cachedVerification.verifiedAt);
@@ -781,7 +842,12 @@ async function initLicense() {
       const daysSinceVerification = (now - cachedTime) / (1000 * 60 * 60 * 24);
 
       if (daysSinceVerification <= 7) {
-        // 캐시 유효 - UI 이미 표시됨
+        currentLicense = {
+          ...saved,
+          ...saved.cachedVerification,
+          fromCache: true
+        };
+        showLicenseActiveState(currentLicense);
         return;
       }
     }
@@ -873,31 +939,43 @@ activateLicenseBtn?.addEventListener('click', async () => {
 
 // 라이센스 비활성화 버튼
 deactivateLicenseBtn?.addEventListener('click', async () => {
-  if (!confirm('이 기기에서 라이센스를 비활성화하시겠습니까?')) {
+  if (!confirm('이 기기에서 라이센스를 비활성화하시겠습니까?\n\n다른 기기에서 이 라이센스를 사용할 수 있게 됩니다.')) {
     return;
   }
+
+  let serverSuccess = false;
 
   try {
     // 서버에서 기기 등록 해제
     if (currentLicense?.licenseKey) {
-      const machineId = await window.settingsApi.getMachineId();
-      await fetch(`${SYNC_SERVER_URL}/api/license/deactivate`, {
+      const deviceFingerprint = await window.settingsApi.getMachineId();
+      const response = await fetch(`${SYNC_SERVER_URL}/api/license/deactivate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           licenseKey: currentLicense.licenseKey,
-          machineId
+          deviceFingerprint
         })
       });
+
+      const result = await response.json();
+      serverSuccess = result.success;
+      console.log('[License] Deactivation result:', result);
     }
   } catch (e) {
-    console.error('Deactivation error:', e);
+    console.error('[License] Deactivation server error:', e);
+    // 서버 오류여도 로컬은 삭제 진행 (오프라인 등)
   }
 
   // 로컬 라이센스 정보 삭제
   await window.settingsApi.setLicense(null);
   currentLicense = null;
   showLicenseInputState();
+
+  // 사용자 피드백
+  if (serverSuccess) {
+    console.log('[License] Device deactivated successfully');
+  }
 });
 
 // 갱신하기 버튼 (만료 상태에서)
