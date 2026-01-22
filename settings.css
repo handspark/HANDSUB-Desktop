@@ -50,6 +50,7 @@ html, body {
   display: flex;
   justify-content: center;
   align-items: center;
+  border-bottom: 1px solid var(--border-color);
 }
 
 #titlebar .title {
@@ -97,9 +98,10 @@ html, body {
 /* Sidebar (left) */
 #sidebar {
   width: 120px;
-  background: var(--bg-secondary);
+  background: var(--bg-primary);
   padding: 24px 12px;
   flex-shrink: 0;
+  border-right: 1px solid var(--border-color);
 }
 
 .nav-item {

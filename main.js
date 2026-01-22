@@ -142,6 +142,16 @@ function setNotificationEnabled(enabled) {
   }
 }
 
+// ===== Cloud Sync Settings =====
+function getCloudSyncEnabled() {
+  return config.cloudSyncEnabled || false;
+}
+
+function setCloudSyncEnabled(enabled) {
+  config.cloudSyncEnabled = enabled;
+  saveConfig(config);
+}
+
 // ===== Database Setup (single instance in main process) =====
 function getAppDataPath() {
   const appName = 'handsub';
@@ -1607,6 +1617,16 @@ ipcMain.handle('get-notification-enabled', () => {
 ipcMain.handle('set-notification-enabled', (_, enabled) => {
   if (typeof enabled !== 'boolean') return false;
   setNotificationEnabled(enabled);
+  return true;
+});
+
+ipcMain.handle('get-cloud-sync-enabled', () => {
+  return getCloudSyncEnabled();
+});
+
+ipcMain.handle('set-cloud-sync-enabled', (_, enabled) => {
+  if (typeof enabled !== 'boolean') return false;
+  setCloudSyncEnabled(enabled);
   return true;
 });
 

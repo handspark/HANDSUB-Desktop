@@ -1,5 +1,6 @@
 const autoLaunchCheckbox = document.getElementById('autoLaunch');
 const notificationCheckbox = document.getElementById('notificationEnabled');
+const cloudSyncCheckbox = document.getElementById('cloudSyncEnabled');
 const closeBtn = document.getElementById('closeBtn');
 const shortcutInput = document.getElementById('shortcutInput');
 const newMemoShortcutInput = document.getElementById('newMemoShortcutInput');
@@ -63,6 +64,10 @@ navItems.forEach(item => {
   // 알림 설정 로드
   const notificationEnabled = await window.settingsApi.getNotificationEnabled();
   notificationCheckbox.checked = notificationEnabled;
+
+  // 클라우드 동기화 설정 로드
+  const cloudSyncEnabled = await window.settingsApi.getCloudSyncEnabled();
+  cloudSyncCheckbox.checked = cloudSyncEnabled || false;
 
   // 호출키 로드
   const triggerKey = await window.settingsApi.getTriggerKey();
@@ -252,6 +257,11 @@ autoLaunchCheckbox.addEventListener('change', async () => {
 // 알림 설정 변경
 notificationCheckbox.addEventListener('change', async () => {
   await window.settingsApi.setNotificationEnabled(notificationCheckbox.checked);
+});
+
+// 클라우드 동기화 설정 변경
+cloudSyncCheckbox.addEventListener('change', async () => {
+  await window.settingsApi.setCloudSyncEnabled(cloudSyncCheckbox.checked);
 });
 
 // ===== Snippet Management =====

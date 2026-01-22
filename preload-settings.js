@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('settingsApi', {
   setAutoLaunch: (enabled) => ipcRenderer.invoke('set-auto-launch', enabled),
   getNotificationEnabled: () => ipcRenderer.invoke('get-notification-enabled'),
   setNotificationEnabled: (enabled) => ipcRenderer.invoke('set-notification-enabled', enabled),
+  getCloudSyncEnabled: () => ipcRenderer.invoke('get-cloud-sync-enabled'),
+  setCloudSyncEnabled: (enabled) => ipcRenderer.invoke('set-cloud-sync-enabled', enabled),
   getShortcut: () => ipcRenderer.invoke('get-shortcut'),
   setShortcut: (shortcut) => ipcRenderer.invoke('set-shortcut', shortcut),
   getNewMemoShortcut: () => ipcRenderer.invoke('get-new-memo-shortcut'),
