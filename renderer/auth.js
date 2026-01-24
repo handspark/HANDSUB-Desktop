@@ -36,9 +36,7 @@ class AuthManager {
     this.user = await window.api.authGetUser?.() || await window.api.getUser?.();
 
     if (!this.user) {
-      console.log('[Auth] No user found, checking legacy license...');
-      // 레거시 라이센스 확인
-      await this.checkLegacyLicense();
+      console.log('[Auth] No user found, please login');
       console.log(`[Auth] Init completed in ${(performance.now() - startTime).toFixed(1)}ms`);
       return { success: false };
     }
@@ -65,43 +63,6 @@ class AuthManager {
     this.startRefreshInterval();
 
     return { success: true, user: this.user };
-  }
-
-  async checkLegacyLicense() {
-    try {
-      const license = await window.api.getLicense?.();
-      if (!license?.licenseKey) {
-        console.log('[Auth] No license found');
-        return;
-      }
-
-      // 캐시된 검증 정보가 있으면 사용
-      if (license.cachedVerification) {
-        const cached = license.cachedVerification;
-        const cachedTime = new Date(cached.verifiedAt);
-        const daysSinceVerification = (new Date() - cachedTime) / (1000 * 60 * 60 * 24);
-
-        if (daysSinceVerification <= 7) {
-          this.user = {
-            email: cached.user?.email || cached.email || cached.customerEmail,
-            name: cached.user?.name || null,
-            avatarUrl: cached.user?.avatarUrl || null,
-            tier: cached.type === 'lifetime' ? 'lifetime' : 'pro'
-          };
-
-          authState.user = this.user;
-          authState.isLoggedIn = true;
-          authState.isPro = true;
-
-          window.userProfile = { ...this.user };
-
-          console.log('[Auth] Using cached license profile');
-          window.dispatchEvent(new CustomEvent('auth-verified'));
-        }
-      }
-    } catch (e) {
-      console.error('[Auth] Legacy license check error:', e);
-    }
   }
 
   startRefreshInterval() {
@@ -248,12 +209,5 @@ export function onAuthChange(callback) {
     window.removeEventListener('auth-logout', handler);
   };
 }
-
-// 레거시 호환성: license.js의 licenseManager와 동일한 인터페이스
-export const licenseManager = {
-  init: () => authManager.init(),
-  verify: () => authManager.refresh(),
-  cleanup: () => authManager.cleanup()
-};
 
 export default authManager;

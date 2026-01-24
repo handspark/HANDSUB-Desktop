@@ -25,8 +25,6 @@ import {
   initTriggerKeyChange
 } from './snippet.js';
 import { authManager, isPro } from './auth.js';
-// 레거시 호환성을 위해 licenseManager alias 유지
-const licenseManager = authManager;
 import {
   initEditorInputEvents,
   initCheckboxToggle,
@@ -95,7 +93,7 @@ function cleanupAllResources() {
   clearTimeout(timers.memoListScrollTimeout);
   clearTimeout(timers.timeHighlightTimeout);
 
-  licenseManager.cleanup();
+  authManager.cleanup();
 
   snippetState.isProcessingSnippet = false;
   snippetState.snippetFormMode = false;
@@ -171,7 +169,7 @@ async function bootstrap() {
   const [, , authResult] = await Promise.all([
     loadSnippets(),
     loadTriggerKey(),
-    licenseManager.init() // 인증을 기다림
+    authManager.init() // 인증을 기다림
   ]);
 
   // 2. 인증 완료 후 연락처 미리 로드 (백그라운드)

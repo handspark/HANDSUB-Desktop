@@ -1745,12 +1745,7 @@ ipcMain.handle('set-sync-server', (_, url) => {
   return true;
 });
 
-// ===== License (암호화 저장) =====
-function getLicensePath() {
-  const configPath = getConfigPath();
-  const configDir = path.dirname(configPath);
-  return path.join(configDir, 'license.enc');
-}
+// ===== Device & Machine ID =====
 
 // 기기 고유 ID 생성
 function getMachineId() {
@@ -1765,78 +1760,41 @@ function getMachineId() {
   return crypto.createHash('sha256').update(data).digest('hex').substring(0, 32);
 }
 
-ipcMain.handle('get-license', () => {
-  try {
-    const licensePath = getLicensePath();
-    if (!fs.existsSync(licensePath)) return null;
-
-    if (!safeStorage.isEncryptionAvailable()) {
-      console.warn('[License] Encryption not available');
-      return null;
-    }
-
-    const encrypted = fs.readFileSync(licensePath);
-    const decrypted = safeStorage.decryptString(encrypted);
-    return JSON.parse(decrypted);
-  } catch (e) {
-    console.error('Failed to get license:', e);
-    return null;
-  }
-});
-
-ipcMain.handle('set-license', (_, licenseData) => {
-  try {
-    const licensePath = getLicensePath();
-    if (!licenseData) {
-      if (fs.existsSync(licensePath)) {
-        fs.unlinkSync(licensePath);
-      }
-      return true;
-    }
-
-    if (!safeStorage.isEncryptionAvailable()) {
-      console.warn('[License] Encryption not available');
-      return false;
-    }
-
-    const dataStr = JSON.stringify(licenseData);
-    const encrypted = safeStorage.encryptString(dataStr);
-    fs.writeFileSync(licensePath, encrypted);
-    return true;
-  } catch (e) {
-    console.error('Failed to set license:', e);
-    return false;
-  }
-});
-
 ipcMain.handle('get-machine-id', () => {
   return getMachineId();
 });
 
-ipcMain.handle('verify-license', async (_, licenseKey) => {
-  try {
-    const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
-    const deviceFingerprint = getMachineId();
-    const deviceName = os.hostname();
+// ===== License API (Deprecated - 로그인 기반으로 마이그레이션) =====
+// 레거시 호환성을 위해 유지하지만 모든 기능은 로그인 기반으로 전환됨
 
-    const response = await fetchJson(`${serverUrl}/api/license/verify`, {
-      method: 'POST',
-      body: JSON.stringify({ licenseKey, deviceFingerprint, deviceName })
-    });
+function getLicensePath() {
+  const configPath = getConfigPath();
+  const configDir = path.dirname(configPath);
+  return path.join(configDir, 'license.enc');
+}
 
-    return response;
-  } catch (e) {
-    console.error('[License] Verify error:', e);
-    // 오프라인 모드: 로컬 캐시 확인
-    const cached = config.lastLicenseVerification;
-    const gracePeriod = 7 * 24 * 60 * 60 * 1000; // 7일
+// 레거시: 라이센스 조회 (로그인으로 대체됨)
+ipcMain.handle('get-license', () => {
+  console.log('[License] Deprecated: Use auth-get-user instead');
+  return null;
+});
 
-    if (cached && (Date.now() - cached.timestamp < gracePeriod)) {
-      return { ...cached.result, offline: true };
-    }
+// 레거시: 라이센스 저장 (로그인으로 대체됨)
+ipcMain.handle('set-license', () => {
+  console.log('[License] Deprecated: Use auth login instead');
+  return false;
+});
 
-    return { valid: false, error: 'network_error', offline: true };
-  }
+// 레거시: 라이센스 검증 (로그인으로 대체됨)
+ipcMain.handle('verify-license', async () => {
+  console.log('[License] Deprecated: Use auth-refresh instead');
+  return { valid: false, error: 'deprecated', message: '로그인이 필요합니다' };
+});
+
+// 레거시: 라이센스 검증 캐시 (더 이상 사용 안 함)
+ipcMain.handle('cache-license-verification', () => {
+  console.log('[License] Deprecated: No longer needed');
+  return false;
 });
 
 // JSON fetch helper
@@ -1862,10 +1820,9 @@ function fetchJson(url, options = {}) {
             if (res.statusCode >= 200 && res.statusCode < 300) {
               resolve(json);
             } else {
-              resolve({ valid: false, ...json });
+              resolve({ success: false, valid: false, statusCode: res.statusCode, ...json });
             }
           } catch (e) {
-            // 디버그용: 실제 응답 내용 로그
             console.error(`[FetchJson] Status: ${res.statusCode}, Response: ${data.substring(0, 200)}`);
             reject(new Error(`Invalid JSON response (status: ${res.statusCode})`));
           }
@@ -1888,53 +1845,108 @@ function fetchJson(url, options = {}) {
   });
 }
 
-// 라이센스 검증 결과 캐시 저장
-ipcMain.handle('cache-license-verification', (_, result) => {
-  config.lastLicenseVerification = {
-    result,
-    timestamp: Date.now()
-  };
-  saveConfig(config);
-  return true;
-});
+// ===== Authenticated Fetch (v2 API용) =====
 
-// ===== Memo Transfer API =====
-ipcMain.handle('memo-send', async (_, recipientKey, content, metadata) => {
+// JWT 토큰 자동 갱신 포함 인증된 요청
+async function authenticatedFetch(url, options = {}) {
+  const auth = getStoredAuth();
+
+  if (!auth?.accessToken) {
+    return { success: false, error: 'not_authenticated', message: '로그인이 필요합니다' };
+  }
+
+  const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
+  const fullUrl = url.startsWith('http') ? url : `${serverUrl}${url}`;
+
   try {
-    const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
-    const license = await getLicenseFromStorage();
-    if (!license?.licenseKey) {
-      return { success: false, error: 'License required' };
-    }
-
-    const response = await fetchJson(`${serverUrl}/api/memo/send`, {
-      method: 'POST',
-      headers: { 'X-License-Key': license.licenseKey },
-      body: JSON.stringify({
-        recipientLicenseKey: recipientKey,
-        memoContent: content,
-        memoMetadata: metadata
-      })
+    // 첫 번째 요청 시도
+    const response = await fetchJson(fullUrl, {
+      ...options,
+      headers: {
+        ...options.headers,
+        'Authorization': `Bearer ${auth.accessToken}`
+      }
     });
+
+    // 토큰 만료 시 갱신 후 재시도
+    if (response.error === 'token_expired' && auth.refreshToken) {
+      console.log('[Auth] Token expired, refreshing...');
+      const refreshed = await refreshAuthTokens();
+      if (refreshed) {
+        const newAuth = getStoredAuth();
+        return await fetchJson(fullUrl, {
+          ...options,
+          headers: {
+            ...options.headers,
+            'Authorization': `Bearer ${newAuth.accessToken}`
+          }
+        });
+      } else {
+        return { success: false, error: 'refresh_failed', message: '세션이 만료되었습니다. 다시 로그인해주세요.' };
+      }
+    }
 
     return response;
   } catch (e) {
-    console.error('[Memo] Send error:', e);
-    return { success: false, error: e.message };
+    console.error('[AuthFetch] Error:', e);
+    return { success: false, error: 'network_error', message: e.message };
   }
-});
+}
 
-ipcMain.handle('memo-inbox', async () => {
+// 토큰 갱신
+async function refreshAuthTokens() {
+  const auth = getStoredAuth();
+  if (!auth?.refreshToken) return false;
+
   try {
     const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
-    const license = await getLicenseFromStorage();
-    if (!license?.licenseKey) {
+    const response = await fetchJson(`${serverUrl}/api/auth/refresh`, {
+      method: 'POST',
+      body: JSON.stringify({
+        refreshToken: auth.refreshToken,
+        deviceFingerprint: getMachineId(),
+        deviceName: os.hostname()
+      })
+    });
+
+    if (response.accessToken) {
+      await saveAuthTokens({
+        accessToken: response.accessToken,
+        refreshToken: response.refreshToken,
+        user: response.user
+      });
+      return true;
+    }
+    return false;
+  } catch (e) {
+    console.error('[Auth] Refresh failed:', e);
+    return false;
+  }
+}
+
+// Pro 사용자 여부 확인
+function isPro() {
+  const auth = getStoredAuth();
+  return auth?.user?.tier === 'pro' || auth?.user?.tier === 'lifetime';
+}
+
+// ===== Memo Transfer API (v2 - 로그인 기반) =====
+
+// 레거시 라이센스 기반 전달 (deprecated)
+ipcMain.handle('memo-send', async () => {
+  console.log('[Memo] Deprecated: Use memo-send-by-email instead');
+  return { success: false, error: 'deprecated', message: '로그인이 필요합니다' };
+});
+
+// 받은 메모 목록 (v2)
+ipcMain.handle('memo-inbox', async () => {
+  try {
+    if (!isPro()) {
       return [];
     }
 
-    const response = await fetchJson(`${serverUrl}/api/memo/inbox`, {
-      method: 'GET',
-      headers: { 'X-License-Key': license.licenseKey }
+    const response = await authenticatedFetch('/api/v2/memo/inbox', {
+      method: 'GET'
     });
 
     return Array.isArray(response) ? response : [];
@@ -1944,17 +1956,15 @@ ipcMain.handle('memo-inbox', async () => {
   }
 });
 
+// 메모 수신 확인 (v2)
 ipcMain.handle('memo-receive', async (_, transferId) => {
   try {
-    const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
-    const license = await getLicenseFromStorage();
-    if (!license?.licenseKey) {
-      return { success: false, error: 'License required' };
+    if (!isPro()) {
+      return { success: false, error: 'pro_required', message: 'Pro 플랜이 필요합니다' };
     }
 
-    const response = await fetchJson(`${serverUrl}/api/memo/receive/${transferId}`, {
-      method: 'POST',
-      headers: { 'X-License-Key': license.licenseKey }
+    const response = await authenticatedFetch(`/api/v2/memo/receive/${transferId}`, {
+      method: 'POST'
     });
 
     return response;
@@ -1964,18 +1974,15 @@ ipcMain.handle('memo-receive', async (_, transferId) => {
   }
 });
 
-// 이메일로 메모 전달
+// 이메일로 메모 전달 (v2)
 ipcMain.handle('memo-send-by-email', async (_, recipientEmail, content, metadata) => {
   try {
-    const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
-    const license = await getLicenseFromStorage();
-    if (!license?.licenseKey) {
-      return { success: false, error: 'License required' };
+    if (!isPro()) {
+      return { success: false, error: 'pro_required', message: 'Pro 플랜이 필요합니다' };
     }
 
-    const response = await fetchJson(`${serverUrl}/api/memo/send-by-email`, {
+    const response = await authenticatedFetch('/api/v2/memo/send-by-email', {
       method: 'POST',
-      headers: { 'X-License-Key': license.licenseKey },
       body: JSON.stringify({
         recipientEmail,
         memoContent: content,
@@ -1990,18 +1997,15 @@ ipcMain.handle('memo-send-by-email', async (_, recipientEmail, content, metadata
   }
 });
 
-// 최근 전달 연락처 조회
+// 최근 전달 연락처 조회 (v2)
 ipcMain.handle('memo-contacts', async () => {
   try {
-    const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
-    const license = await getLicenseFromStorage();
-    if (!license?.licenseKey) {
+    if (!isPro()) {
       return [];
     }
 
-    const response = await fetchJson(`${serverUrl}/api/memo/contacts`, {
-      method: 'GET',
-      headers: { 'X-License-Key': license.licenseKey }
+    const response = await authenticatedFetch('/api/v2/memo/contacts', {
+      method: 'GET'
     });
 
     return Array.isArray(response) ? response : [];
@@ -2063,14 +2067,10 @@ ipcMain.handle('contact-toggle-favorite', async (_, email) => {
       UPDATE contacts_cache SET is_favorite = ?, synced_at = CURRENT_TIMESTAMP WHERE email = ?
     `).run(newFavorite, email);
 
-    // 서버 동기화 (백그라운드)
-    const license = await getLicenseFromStorage();
-    if (license?.licenseKey) {
-      const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
-      fetchJson(`${serverUrl}/api/memo/contacts/${encodeURIComponent(email)}/favorite`, {
-        method: 'POST',
-        headers: { 'X-License-Key': license.licenseKey },
-        body: JSON.stringify({ favorite: newFavorite === 1 })
+    // 서버 동기화 (백그라운드) - v2 API 사용
+    if (isPro()) {
+      authenticatedFetch(`/api/v2/contacts/favorites/${encodeURIComponent(email)}`, {
+        method: newFavorite === 1 ? 'POST' : 'DELETE'
       }).catch(() => {});
     }
 
@@ -2095,18 +2095,15 @@ function normalizeShortcut(shortcut) {
     .replace(/CommandOrControl\+CommandOrControl/g, 'CommandOrControl'); // 중복 제거
 }
 
-// 서버에서 설정 가져오기 (delta sync)
+// 서버에서 설정 가져오기 (delta sync) - v2 API 사용
 ipcMain.handle('settings-sync-pull', async () => {
   try {
-    const license = await getLicenseFromStorage();
-    if (!license?.licenseKey) return { success: false, error: 'No license' };
+    if (!isPro()) return { success: false, error: 'Pro 플랜이 필요합니다' };
 
     const lastSync = db.prepare('SELECT MAX(synced_at) as last FROM settings_sync').get().last || 0;
-    const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
 
-    const response = await fetchJson(`${serverUrl}/api/settings/sync?since=${lastSync}`, {
-      method: 'GET',
-      headers: { 'X-License-Key': license.licenseKey }
+    const response = await authenticatedFetch(`/api/v2/settings/sync?since=${lastSync}`, {
+      method: 'GET'
     });
 
     if (response.settings && response.settings.length > 0) {
@@ -2145,7 +2142,7 @@ ipcMain.handle('settings-sync-pull', async () => {
   }
 });
 
-// 설정 변경 시 서버에 푸시
+// 설정 변경 시 서버에 푸시 - v2 API 사용
 ipcMain.handle('settings-sync-push', async (_, key, value) => {
   if (!SYNCABLE_SETTINGS.includes(key)) return false;
 
@@ -2163,14 +2160,11 @@ ipcMain.handle('settings-sync-push', async (_, key, value) => {
     VALUES (?, ?, ?, 0)
   `).run(key, JSON.stringify(normalizedValue), timestamp);
 
-  // 서버에 푸시 (백그라운드)
+  // 서버에 푸시 (백그라운드) - v2 API 사용
   try {
-    const license = await getLicenseFromStorage();
-    if (license?.licenseKey) {
-      const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
-      await fetchJson(`${serverUrl}/api/settings/sync`, {
+    if (isPro()) {
+      await authenticatedFetch('/api/v2/settings/sync', {
         method: 'POST',
-        headers: { 'X-License-Key': license.licenseKey },
         body: JSON.stringify({ settings: [{ key, value: JSON.stringify(normalizedValue), updatedAt: timestamp }] })
       });
 
@@ -2184,15 +2178,13 @@ ipcMain.handle('settings-sync-push', async (_, key, value) => {
   return true;
 });
 
-// ===== 스니펫 동기화 IPC 핸들러 =====
+// ===== 스니펫 동기화 IPC 핸들러 (v2 API) =====
 
 ipcMain.handle('snippets-sync', async () => {
   try {
-    const license = await getLicenseFromStorage();
-    if (!license?.licenseKey) return { success: false, error: 'No license' };
+    if (!isPro()) return { success: false, error: 'Pro 플랜이 필요합니다' };
 
     const lastSync = db.prepare('SELECT MAX(synced_at) as last FROM snippets WHERE synced_at > 0').get().last || 0;
-    const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
 
     // 로컬 변경사항 수집
     const localChanges = db.prepare(`
@@ -2200,10 +2192,9 @@ ipcMain.handle('snippets-sync', async () => {
       FROM snippets WHERE (updated_at > synced_at OR synced_at = 0)
     `).all();
 
-    // 서버에 푸시 + 풀
-    const response = await fetchJson(`${serverUrl}/api/snippets/sync?since=${lastSync}`, {
+    // 서버에 푸시 + 풀 (v2 API)
+    const response = await authenticatedFetch(`/api/v2/snippets/sync?since=${lastSync}`, {
       method: 'POST',
-      headers: { 'X-License-Key': license.licenseKey },
       body: JSON.stringify({ snippets: localChanges, deletedIds: [] })
     });
 
@@ -2240,7 +2231,7 @@ ipcMain.handle('snippets-sync', async () => {
   }
 });
 
-// ===== 연락처 그룹 IPC 핸들러 =====
+// ===== 연락처 그룹 IPC 핸들러 (v2 API) =====
 
 // 그룹 목록 조회
 ipcMain.handle('groups-getAll', async () => {
@@ -2253,13 +2244,10 @@ ipcMain.handle('groups-getAll', async () => {
       ORDER BY sort_order ASC, created_at ASC
     `).all();
 
-    // 서버에서 최신 데이터 가져오기 (백그라운드)
-    const license = await getLicenseFromStorage();
-    if (license?.licenseKey) {
-      const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
-      fetchJson(`${serverUrl}/api/contacts/groups`, {
-        method: 'GET',
-        headers: { 'X-License-Key': license.licenseKey }
+    // 서버에서 최신 데이터 가져오기 (백그라운드) - v2 API
+    if (isPro()) {
+      authenticatedFetch('/api/v2/contacts/groups', {
+        method: 'GET'
       }).then(serverGroups => {
         // 서버 데이터로 로컬 업데이트 (나중에 사용)
       }).catch(() => {});
@@ -2289,13 +2277,10 @@ ipcMain.handle('group-create', async (_, { name, color }) => {
       VALUES (?, ?, ?, ?)
     `).run(id, name, color || '#007AFF', timestamp);
 
-    // 서버 동기화 (백그라운드)
-    const license = await getLicenseFromStorage();
-    if (license?.licenseKey) {
-      const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
-      fetchJson(`${serverUrl}/api/contacts/groups`, {
+    // 서버 동기화 (백그라운드) - v2 API
+    if (isPro()) {
+      authenticatedFetch('/api/v2/contacts/groups', {
         method: 'POST',
-        headers: { 'X-License-Key': license.licenseKey },
         body: JSON.stringify({ name, color })
       }).then(res => {
         if (res.group?.id) {
@@ -2317,13 +2302,10 @@ ipcMain.handle('group-delete', async (_, groupId) => {
   try {
     db.prepare('DELETE FROM contact_groups WHERE id = ?').run(groupId);
 
-    // 서버 동기화 (백그라운드)
-    const license = await getLicenseFromStorage();
-    if (license?.licenseKey) {
-      const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
-      fetchJson(`${serverUrl}/api/contacts/groups/${groupId}`, {
-        method: 'DELETE',
-        headers: { 'X-License-Key': license.licenseKey }
+    // 서버 동기화 (백그라운드) - v2 API
+    if (isPro()) {
+      authenticatedFetch(`/api/v2/contacts/groups/${groupId}`, {
+        method: 'DELETE'
       }).catch(() => {});
     }
 
@@ -2342,13 +2324,10 @@ ipcMain.handle('group-add-member', async (_, groupId, email) => {
       VALUES (?, ?)
     `).run(email, groupId);
 
-    // 서버 동기화 (백그라운드)
-    const license = await getLicenseFromStorage();
-    if (license?.licenseKey) {
-      const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
-      fetchJson(`${serverUrl}/api/contacts/groups/${groupId}/members`, {
+    // 서버 동기화 (백그라운드) - v2 API
+    if (isPro()) {
+      authenticatedFetch(`/api/v2/contacts/groups/${groupId}/members`, {
         method: 'POST',
-        headers: { 'X-License-Key': license.licenseKey },
         body: JSON.stringify({ emails: [email] })
       }).catch(() => {});
     }
@@ -2366,13 +2345,10 @@ ipcMain.handle('group-remove-member', async (_, groupId, email) => {
     db.prepare('DELETE FROM contact_group_members WHERE group_id = ? AND contact_email = ?')
       .run(groupId, email);
 
-    // 서버 동기화 (백그라운드)
-    const license = await getLicenseFromStorage();
-    if (license?.licenseKey) {
-      const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
-      fetchJson(`${serverUrl}/api/contacts/groups/${groupId}/members/${encodeURIComponent(email)}`, {
-        method: 'DELETE',
-        headers: { 'X-License-Key': license.licenseKey }
+    // 서버 동기화 (백그라운드) - v2 API
+    if (isPro()) {
+      authenticatedFetch(`/api/v2/contacts/groups/${groupId}/members/${encodeURIComponent(email)}`, {
+        method: 'DELETE'
       }).catch(() => {});
     }
 
@@ -2757,23 +2733,17 @@ ipcMain.handle('notification-delete', (_, id) => {
   }
 });
 
-// ===== Share Link API =====
+// ===== Share Link API (v2 - 로그인 기반) =====
 
-// 공유 링크 생성
+// 공유 링크 생성 (v2)
 ipcMain.handle('share-link-create', async (_, { content, memoUuid, expiresIn, password }) => {
   try {
-    const license = await getLicenseFromStorage();
-    if (!license?.licenseKey) {
-      return { success: false, error: 'no_license', message: '라이센스가 필요합니다' };
+    if (!isPro()) {
+      return { success: false, error: 'pro_required', message: 'Pro 플랜이 필요합니다' };
     }
 
-    const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
-    const response = await fetchJson(`${serverUrl}/api/share/create`, {
+    const response = await authenticatedFetch('/api/v2/share/create', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-License-Key': license.licenseKey
-      },
       body: JSON.stringify({ content, memoUuid, expiresIn, password })
     });
 
@@ -2784,18 +2754,15 @@ ipcMain.handle('share-link-create', async (_, { content, memoUuid, expiresIn, pa
   }
 });
 
-// 공유 링크 삭제
+// 공유 링크 삭제 (v2)
 ipcMain.handle('share-link-delete', async (_, token) => {
   try {
-    const license = await getLicenseFromStorage();
-    if (!license?.licenseKey) {
-      return { success: false, error: 'no_license' };
+    if (!isPro()) {
+      return { success: false, error: 'pro_required' };
     }
 
-    const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
-    const response = await fetchJson(`${serverUrl}/api/share/${token}`, {
-      method: 'DELETE',
-      headers: { 'X-License-Key': license.licenseKey }
+    const response = await authenticatedFetch(`/api/v2/share/${token}`, {
+      method: 'DELETE'
     });
 
     return response;
@@ -2805,18 +2772,15 @@ ipcMain.handle('share-link-delete', async (_, token) => {
   }
 });
 
-// 내 공유 목록 조회
+// 내 공유 목록 조회 (v2)
 ipcMain.handle('share-link-list', async () => {
   try {
-    const license = await getLicenseFromStorage();
-    if (!license?.licenseKey) {
+    if (!isPro()) {
       return [];
     }
 
-    const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
-    const response = await fetchJson(`${serverUrl}/api/share/my`, {
-      method: 'GET',
-      headers: { 'X-License-Key': license.licenseKey }
+    const response = await authenticatedFetch('/api/v2/share/my', {
+      method: 'GET'
     });
 
     return Array.isArray(response) ? response : [];
@@ -2860,16 +2824,13 @@ function getPlainTextPreview(html, maxLength = 50) {
   return text;
 }
 
-// 받은 메모 조회 helper
+// 받은 메모 조회 helper (v2 API)
 async function getInboxMemos() {
   try {
-    const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
-    const license = await getLicenseFromStorage();
-    if (!license?.licenseKey) return [];
+    if (!isPro()) return [];
 
-    const response = await fetchJson(`${serverUrl}/api/memo/inbox`, {
-      method: 'GET',
-      headers: { 'X-License-Key': license.licenseKey }
+    const response = await authenticatedFetch('/api/v2/memo/inbox', {
+      method: 'GET'
     });
 
     return Array.isArray(response) ? response : [];
@@ -2911,19 +2872,10 @@ function updateTrayBadge() {
   }
 }
 
-// 로컬 라이센스 조회 helper
+// 로컬 라이센스 조회 helper (Deprecated - 더 이상 사용하지 않음)
 async function getLicenseFromStorage() {
-  try {
-    const licensePath = getLicensePath();
-    if (!fs.existsSync(licensePath)) return null;
-    if (!safeStorage.isEncryptionAvailable()) return null;
-
-    const encrypted = fs.readFileSync(licensePath);
-    const decrypted = safeStorage.decryptString(encrypted);
-    return JSON.parse(decrypted);
-  } catch (e) {
-    return null;
-  }
+  console.log('[License] getLicenseFromStorage is deprecated');
+  return null;
 }
 
 // ===== Auth (로그인 기반 인증) =====
@@ -3470,7 +3422,7 @@ async function checkForNewMemos() {
   }
 }
 
-// 받은 메모를 로컬 DB에 저장
+// 받은 메모를 로컬 DB에 저장 (v2 API)
 async function importReceivedMemo(memo) {
   try {
     // 이미 존재하는지 확인 (transfer_id로)
@@ -3490,13 +3442,10 @@ async function importReceivedMemo(memo) {
 
     console.log('[Inbox] Imported memo:', result.lastInsertRowid, 'from', memo.senderEmail);
 
-    // 서버에 수신 확인 전송
-    const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
-    const license = await getLicenseFromStorage();
-    if (license?.licenseKey) {
-      await fetchJson(`${serverUrl}/api/memo/receive/${memo.id}`, {
-        method: 'POST',
-        headers: { 'X-License-Key': license.licenseKey }
+    // 서버에 수신 확인 전송 (v2 API)
+    if (isPro()) {
+      await authenticatedFetch(`/api/v2/memo/receive/${memo.id}`, {
+        method: 'POST'
       });
     }
 

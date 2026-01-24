@@ -75,12 +75,8 @@ contextBridge.exposeInMainWorld('api', {
   saveManifestToolSettings: (toolId, settings) => ipcRenderer.invoke('manifest-tool-settings-save', toolId, settings),
   executeManifestTool: (toolId, shortcut, fieldValues) => ipcRenderer.invoke('manifest-tool-execute', toolId, shortcut, fieldValues),
 
-  // ===== License API (레거시) =====
-  getLicense: () => ipcRenderer.invoke('get-license'),
-  setLicense: (data) => ipcRenderer.invoke('set-license', data),
-  verifyLicense: (key) => ipcRenderer.invoke('verify-license', key),
+  // ===== Device API =====
   getMachineId: () => ipcRenderer.invoke('get-machine-id'),
-  cacheLicenseVerification: (result) => ipcRenderer.invoke('cache-license-verification', result),
   getSyncServer: () => ipcRenderer.invoke('get-sync-server'),
 
   // ===== Auth API (로그인 기반) =====
