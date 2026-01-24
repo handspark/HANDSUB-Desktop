@@ -24,7 +24,9 @@ import {
   initInputDetection,
   initTriggerKeyChange
 } from './snippet.js';
-import { licenseManager } from './license.js';
+import { authManager, isPro } from './auth.js';
+// 레거시 호환성을 위해 licenseManager alias 유지
+const licenseManager = authManager;
 import {
   initEditorInputEvents,
   initCheckboxToggle,

@@ -5,6 +5,7 @@
 import { elements, memoState, sidebarState } from './state.js';
 import { getPlainTextFromHtml, setEditorContent } from './editor.js';
 import { escapeHtml, isValidColor } from './security.js';
+import { isPro, requirePro } from './auth.js';
 
 // 날짜 포맷 (순환 참조 방지를 위해 여기서 직접 구현)
 function formatDate(time) {
@@ -296,6 +297,11 @@ export function initMenuCloseHandler() {
 const DEFAULT_AVATAR = 'https://www.gravatar.com/avatar/?d=mp&s=56';
 
 function openSharePopup(memo, btnEl) {
+  // Pro 사용자만 공유 가능
+  if (!requirePro('메모 공유')) {
+    return;
+  }
+
   sharePopupMemo = memo;
 
   const popup = document.getElementById('share-popup');

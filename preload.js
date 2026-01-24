@@ -33,6 +33,9 @@ const saveBeforeQuitListener = createSafeListener('request-save-before-quit');
 const receivedMemoListener = createSafeListener('received-memo');
 const unreadCountChangedListener = createSafeListener('unread-count-changed');
 const quickShareTriggerListener = createSafeListener('quick-share-trigger');
+const authSuccessListener = createSafeListener('auth-success');
+const authErrorListener = createSafeListener('auth-error');
+const authLogoutListener = createSafeListener('auth-logout');
 
 // API for renderer (all DB operations go through main process)
 contextBridge.exposeInMainWorld('api', {
@@ -72,13 +75,22 @@ contextBridge.exposeInMainWorld('api', {
   saveManifestToolSettings: (toolId, settings) => ipcRenderer.invoke('manifest-tool-settings-save', toolId, settings),
   executeManifestTool: (toolId, shortcut, fieldValues) => ipcRenderer.invoke('manifest-tool-execute', toolId, shortcut, fieldValues),
 
-  // ===== License API =====
+  // ===== License API (레거시) =====
   getLicense: () => ipcRenderer.invoke('get-license'),
   setLicense: (data) => ipcRenderer.invoke('set-license', data),
   verifyLicense: (key) => ipcRenderer.invoke('verify-license', key),
   getMachineId: () => ipcRenderer.invoke('get-machine-id'),
   cacheLicenseVerification: (result) => ipcRenderer.invoke('cache-license-verification', result),
   getSyncServer: () => ipcRenderer.invoke('get-sync-server'),
+
+  // ===== Auth API (로그인 기반) =====
+  authLogin: () => ipcRenderer.invoke('auth-login'),
+  authGetUser: () => ipcRenderer.invoke('auth-get-user'),
+  getUser: () => ipcRenderer.invoke('auth-get-user'),
+  authLogout: () => ipcRenderer.invoke('auth-logout'),
+  authRefresh: () => ipcRenderer.invoke('auth-refresh'),
+  authIsPro: () => ipcRenderer.invoke('auth-is-pro'),
+  authGetToken: () => ipcRenderer.invoke('auth-get-token'),
 
   // ===== Memo Transfer API =====
   sendMemo: (recipientKey, content, metadata) => ipcRenderer.invoke('memo-send', recipientKey, content, metadata),
@@ -161,5 +173,13 @@ contextBridge.exposeInMainWorld('api', {
   onUnreadCountChanged: (callback) => unreadCountChangedListener.on(callback),
   offUnreadCountChanged: () => unreadCountChangedListener.off(),
   onQuickShareTrigger: (callback) => quickShareTriggerListener.on(callback),
-  offQuickShareTrigger: () => quickShareTriggerListener.off()
+  offQuickShareTrigger: () => quickShareTriggerListener.off(),
+
+  // ===== Auth Event Listeners =====
+  onAuthSuccess: (callback) => authSuccessListener.on(callback),
+  offAuthSuccess: () => authSuccessListener.off(),
+  onAuthError: (callback) => authErrorListener.on(callback),
+  offAuthError: () => authErrorListener.off(),
+  onAuthLogout: (callback) => authLogoutListener.on(callback),
+  offAuthLogout: () => authLogoutListener.off()
 });

@@ -118,13 +118,27 @@
         </div>
       </div>
 
-      <!-- 일반 섹션 (라이센스 + 정보) -->
+      <!-- 일반 섹션 (계정 + 정보) -->
       <div class="section active" id="section-general">
-        <!-- 라이센스 미등록 상태 -->
-        <div id="licenseInputState" class="license-state">
+        <!-- 로그인 전 상태 -->
+        <div id="loginState" class="auth-state">
+          <div class="auth-message">
+            <p>handsub.com 계정으로 로그인하세요</p>
+            <small>로그인하면 여러 기기에서 설정을 동기화할 수 있습니다</small>
+          </div>
+          <button type="button" id="loginBtn" class="btn-login">로그인하기</button>
+
+          <!-- 라이센스 입력 옵션 (기존 사용자용) -->
+          <div class="legacy-license-toggle">
+            <button type="button" id="showLicenseInputBtn" class="btn-text-small">라이센스 키로 등록</button>
+          </div>
+        </div>
+
+        <!-- 라이센스 입력 상태 (기존 사용자용) -->
+        <div id="licenseInputState" class="license-state hidden">
           <div class="license-message">
-            <p>라이센스가 등록되어 있지 않습니다</p>
-            <small>라이센스 키를 입력하여 모든 기능을 사용하세요</small>
+            <p>라이센스 키 입력</p>
+            <small>기존 라이센스 키가 있다면 입력하세요</small>
           </div>
 
           <div class="form-row">
@@ -132,16 +146,46 @@
           </div>
           <button type="button" id="activateLicenseBtn" class="btn-login">라이센스 활성화</button>
           <small class="form-error hidden" id="licenseError"></small>
+          <button type="button" id="backToLoginBtn" class="btn-text">로그인으로 돌아가기</button>
         </div>
 
-        <!-- 라이센스 등록됨 상태 -->
-        <div id="licenseActiveState" class="license-state hidden">
+        <!-- 로그인됨 상태 -->
+        <div id="loggedInState" class="auth-state hidden">
           <!-- 사용자 프로필 -->
           <div class="user-profile" id="userProfile">
             <img src="" alt="프로필" class="profile-avatar" id="userAvatar">
             <div class="profile-info">
               <span class="profile-name" id="userName">사용자</span>
               <span class="profile-email" id="userEmail">-</span>
+            </div>
+            <div class="tier-badge" id="tierBadge">
+              <span id="tierText">FREE</span>
+            </div>
+          </div>
+
+          <div class="auth-info">
+            <div class="auth-details">
+              <div class="detail-row" id="expiryRow" style="display: none;">
+                <span class="detail-label">만료일</span>
+                <span id="tierExpiry">-</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="auth-actions">
+            <button type="button" id="logoutBtn" class="btn-logout">로그아웃</button>
+            <button type="button" id="upgradeBtn" class="btn-upgrade hidden">Pro 업그레이드</button>
+          </div>
+        </div>
+
+        <!-- 라이센스 등록됨 상태 (레거시) -->
+        <div id="licenseActiveState" class="license-state hidden">
+          <!-- 사용자 프로필 -->
+          <div class="user-profile" id="licenseUserProfile">
+            <img src="" alt="프로필" class="profile-avatar" id="licenseUserAvatar">
+            <div class="profile-info">
+              <span class="profile-name" id="licenseUserName">사용자</span>
+              <span class="profile-email" id="licenseUserEmail">-</span>
             </div>
             <div class="license-badge active" id="licenseBadge">
               <span id="licenseTypeText">라이프타임</span>
@@ -150,7 +194,7 @@
 
           <div class="license-info">
             <div class="license-details">
-              <div class="detail-row" id="expiryRow">
+              <div class="detail-row" id="licenseExpiryRow">
                 <span class="detail-label">만료일</span>
                 <span id="licenseExpiry">-</span>
               </div>

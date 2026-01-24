@@ -1387,6 +1387,168 @@ input[type="checkbox"]:checked::before {
 
 .offline-warning small {
   font-size: 10px;
+}
+
+/* Auth Section (Login-based) */
+.auth-state {
+  padding: 0px;
+}
+
+.auth-state.hidden {
+  display: none;
+}
+
+.auth-message {
+  text-align: center;
+  padding: 20px 0;
+}
+
+.auth-message p {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.auth-message small {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+#loginState .btn-login {
+  margin-bottom: 12px;
+}
+
+.legacy-license-toggle {
+  text-align: center;
+}
+
+.btn-text-small {
+  padding: 4px 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.btn-text-small:hover {
+  color: var(--text-secondary);
+}
+
+/* Tier Badge */
+.tier-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.tier-badge.free {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+}
+
+.tier-badge.pro,
+.tier-badge.lifetime {
+  background: var(--active-bg);
+  border-color: var(--active-bg);
+}
+
+.tier-badge span {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tier-badge.free span {
+  color: var(--text-muted);
+}
+
+.tier-badge.pro span,
+.tier-badge.lifetime span {
+  color: var(--text-secondary);
+}
+
+/* Auth Info */
+.auth-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 0px 0px 16px;
+}
+
+.auth-details {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+}
+
+.auth-details .detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.auth-details .detail-label {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.auth-details .detail-row span:last-child {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+/* Auth Actions */
+.auth-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+#loggedInState .btn-logout {
+  width: 100%;
+  padding: 6px;
+  text-align: center;
+  font-size: 10px;
+}
+
+.btn-upgrade {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--bg-primary);
+  background: var(--text-secondary);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-upgrade:hover {
+  background: var(--text-primary);
+}
+
+.btn-upgrade.hidden {
+  display: none;
+}
+
+/* Back to Login Button */
+#backToLoginBtn {
+  margin-top: 8px;
   color: var(--text-muted);
 }
 

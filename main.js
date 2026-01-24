@@ -2926,6 +2926,271 @@ async function getLicenseFromStorage() {
   }
 }
 
+// ===== Auth (로그인 기반 인증) =====
+function getAuthPath() {
+  const configPath = getConfigPath();
+  const configDir = path.dirname(configPath);
+  return path.join(configDir, 'auth.enc');
+}
+
+// 인증 토큰 저장
+async function saveAuthTokens({ accessToken, refreshToken, user }) {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) {
+      console.warn('[Auth] Encryption not available');
+      return false;
+    }
+
+    const data = JSON.stringify({
+      accessToken,
+      refreshToken,
+      user,
+      savedAt: Date.now()
+    });
+    const encrypted = safeStorage.encryptString(data);
+    fs.writeFileSync(getAuthPath(), encrypted);
+    return true;
+  } catch (e) {
+    console.error('[Auth] Failed to save tokens:', e);
+    return false;
+  }
+}
+
+// 저장된 인증 정보 조회
+function getStoredAuth() {
+  try {
+    const authPath = getAuthPath();
+    if (!fs.existsSync(authPath)) return null;
+    if (!safeStorage.isEncryptionAvailable()) return null;
+
+    const encrypted = fs.readFileSync(authPath);
+    const decrypted = safeStorage.decryptString(encrypted);
+    return JSON.parse(decrypted);
+  } catch (e) {
+    console.error('[Auth] Failed to get stored auth:', e);
+    return null;
+  }
+}
+
+// 저장된 사용자 정보 조회
+function getStoredUser() {
+  const auth = getStoredAuth();
+  return auth?.user || null;
+}
+
+// 인증 정보 삭제
+function clearStoredAuth() {
+  try {
+    const authPath = getAuthPath();
+    if (fs.existsSync(authPath)) {
+      fs.unlinkSync(authPath);
+    }
+    return true;
+  } catch (e) {
+    console.error('[Auth] Failed to clear auth:', e);
+    return false;
+  }
+}
+
+// 대기 중인 인증 상태 (CSRF 방지)
+let pendingAuthState = null;
+
+// 프로토콜 콜백 처리
+function handleAuthCallback(url) {
+  try {
+    const urlObj = new URL(url);
+    if (urlObj.host === 'auth' && urlObj.pathname === '/callback') {
+      const code = urlObj.searchParams.get('code');
+      const state = urlObj.searchParams.get('state');
+
+      console.log('[Auth] Received callback with code');
+
+      // state 검증
+      if (pendingAuthState && state !== pendingAuthState) {
+        console.error('[Auth] State mismatch');
+        BrowserWindow.getAllWindows().forEach(w => {
+          if (!w.isDestroyed()) {
+            w.webContents.send('auth-error', { error: 'state_mismatch', message: '인증 상태가 일치하지 않습니다' });
+          }
+        });
+        return;
+      }
+
+      // 서버에 코드 교환 요청
+      exchangeCodeForTokens(code, state);
+    }
+  } catch (e) {
+    console.error('[Auth] Callback handling error:', e);
+  }
+}
+
+// 인증 코드를 토큰으로 교환
+async function exchangeCodeForTokens(code, state) {
+  try {
+    const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
+    const deviceFingerprint = getMachineId();
+    const deviceName = os.hostname();
+
+    const response = await fetchJson(`${serverUrl}/api/auth/callback`, {
+      method: 'POST',
+      body: JSON.stringify({
+        code,
+        state,
+        deviceFingerprint,
+        deviceName
+      })
+    });
+
+    if (response.accessToken) {
+      await saveAuthTokens(response);
+      pendingAuthState = null;
+
+      console.log('[Auth] Login successful:', response.user?.email);
+
+      // 모든 창에 로그인 성공 알림
+      BrowserWindow.getAllWindows().forEach(w => {
+        if (!w.isDestroyed()) {
+          w.webContents.send('auth-success', { user: response.user });
+        }
+      });
+    } else {
+      console.error('[Auth] Token exchange failed:', response);
+      BrowserWindow.getAllWindows().forEach(w => {
+        if (!w.isDestroyed()) {
+          w.webContents.send('auth-error', { error: response.error || 'unknown', message: response.message || '인증에 실패했습니다' });
+        }
+      });
+    }
+  } catch (e) {
+    console.error('[Auth] Token exchange error:', e);
+    BrowserWindow.getAllWindows().forEach(w => {
+      if (!w.isDestroyed()) {
+        w.webContents.send('auth-error', { error: 'network_error', message: '서버 연결에 실패했습니다' });
+      }
+    });
+  }
+}
+
+// 토큰 갱신
+async function refreshAuthTokens() {
+  try {
+    const auth = getStoredAuth();
+    if (!auth?.refreshToken) return null;
+
+    const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
+    const response = await fetchJson(`${serverUrl}/api/auth/refresh`, {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken: auth.refreshToken })
+    });
+
+    if (response.accessToken) {
+      await saveAuthTokens(response);
+      return response;
+    }
+
+    return null;
+  } catch (e) {
+    console.error('[Auth] Token refresh error:', e);
+    return null;
+  }
+}
+
+// 인증된 API 호출 helper
+async function fetchWithAuth(url, options = {}) {
+  const auth = getStoredAuth();
+  if (!auth?.accessToken) {
+    throw new Error('Not authenticated');
+  }
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${auth.accessToken}`,
+    ...options.headers
+  };
+
+  try {
+    const response = await fetchJson(url, { ...options, headers });
+
+    // 토큰 만료 시 갱신 시도
+    if (response.error === 'token_expired') {
+      const refreshed = await refreshAuthTokens();
+      if (refreshed) {
+        headers['Authorization'] = `Bearer ${refreshed.accessToken}`;
+        return fetchJson(url, { ...options, headers });
+      }
+      throw new Error('Session expired');
+    }
+
+    return response;
+  } catch (e) {
+    throw e;
+  }
+}
+
+// ===== Auth IPC Handlers =====
+ipcMain.handle('auth-login', async () => {
+  // state 생성 (CSRF 방지)
+  pendingAuthState = crypto.randomBytes(16).toString('hex');
+
+  const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
+  const wpSiteUrl = config.wpSiteUrl || 'https://handsub.com';
+  const redirectUri = 'handsub://auth/callback';
+
+  const loginUrl = `${wpSiteUrl}/?handsub_login=1&redirect_uri=${encodeURIComponent(redirectUri)}&state=${pendingAuthState}`;
+
+  console.log('[Auth] Opening login URL');
+  shell.openExternal(loginUrl);
+
+  return { state: pendingAuthState };
+});
+
+ipcMain.handle('auth-get-user', () => {
+  return getStoredUser();
+});
+
+ipcMain.handle('auth-logout', async () => {
+  try {
+    const auth = getStoredAuth();
+    if (auth?.refreshToken) {
+      const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
+      await fetchJson(`${serverUrl}/api/auth/logout`, {
+        method: 'POST',
+        body: JSON.stringify({ refreshToken: auth.refreshToken })
+      }).catch(() => {}); // 서버 오류는 무시
+    }
+  } catch (e) {
+    console.error('[Auth] Logout server error:', e);
+  }
+
+  clearStoredAuth();
+  pendingAuthState = null;
+
+  // 모든 창에 로그아웃 알림
+  BrowserWindow.getAllWindows().forEach(w => {
+    if (!w.isDestroyed()) {
+      w.webContents.send('auth-logout');
+    }
+  });
+
+  return true;
+});
+
+ipcMain.handle('auth-refresh', async () => {
+  const result = await refreshAuthTokens();
+  return result ? { success: true, user: result.user } : { success: false };
+});
+
+ipcMain.handle('auth-get-token', () => {
+  const auth = getStoredAuth();
+  return auth?.accessToken || null;
+});
+
+// Pro 사용자 확인
+ipcMain.handle('auth-is-pro', () => {
+  const user = getStoredUser();
+  return user?.tier === 'pro' || user?.tier === 'lifetime';
+});
+
 // New memo
 ipcMain.on('new-memo', () => {
   showNewMemo();
@@ -2984,6 +3249,48 @@ function migrateToolConnectionsToSecureStorage() {
     }
   }
 }
+
+// ===== Custom Protocol Registration =====
+// handsub:// 프로토콜 등록 (앱 인증 콜백용)
+if (process.defaultApp) {
+  // 개발 모드: electron . 로 실행 시
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('handsub', process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  // 프로덕션 모드
+  app.setAsDefaultProtocolClient('handsub');
+}
+
+// 단일 인스턴스 보장 (Windows/Linux)
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  // 두 번째 인스턴스 실행 시 (Windows: 프로토콜 URL 전달)
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    // Windows에서 프로토콜 URL 찾기
+    const url = commandLine.find(arg => arg.startsWith('handsub://'));
+    if (url) {
+      handleAuthCallback(url);
+    }
+
+    // 기존 창 포커스
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    }
+  });
+}
+
+// macOS: open-url 이벤트 (프로토콜 URL)
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  console.log('[Protocol] Received URL:', url);
+  handleAuthCallback(url);
+});
 
 app.whenReady().then(() => {
   const firstRun = isFirstRun();

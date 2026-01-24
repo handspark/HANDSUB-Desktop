@@ -55,10 +55,22 @@ contextBridge.exposeInMainWorld('settingsApi', {
   getSyncServer: () => ipcRenderer.invoke('get-sync-server'),
   setSyncServer: (url) => ipcRenderer.invoke('set-sync-server', url),
 
-  // License API
+  // License API (레거시 지원)
   getLicense: () => ipcRenderer.invoke('get-license'),
   setLicense: (data) => ipcRenderer.invoke('set-license', data),
   verifyLicense: (key) => ipcRenderer.invoke('verify-license', key),
   getMachineId: () => ipcRenderer.invoke('get-machine-id'),
   cacheLicenseVerification: (result) => ipcRenderer.invoke('cache-license-verification', result),
+
+  // Auth API (로그인 기반 인증)
+  authLogin: () => ipcRenderer.invoke('auth-login'),
+  authGetUser: () => ipcRenderer.invoke('auth-get-user'),
+  authLogout: () => ipcRenderer.invoke('auth-logout'),
+  authRefresh: () => ipcRenderer.invoke('auth-refresh'),
+  authIsPro: () => ipcRenderer.invoke('auth-is-pro'),
+
+  // Auth 이벤트 리스너
+  onAuthSuccess: (callback) => ipcRenderer.on('auth-success', (_, data) => callback(data)),
+  onAuthError: (callback) => ipcRenderer.on('auth-error', (_, data) => callback(data)),
+  onAuthLogout: (callback) => ipcRenderer.on('auth-logout', () => callback()),
 });
