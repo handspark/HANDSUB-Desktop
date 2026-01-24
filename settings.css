@@ -755,7 +755,7 @@ input[type="checkbox"]:checked::before {
 }
 
 .btn-logout:hover {
-  color: #e55;
+  color: var(--text-primary);
 }
 
 /* Team Management */
@@ -1475,41 +1475,6 @@ input[type="checkbox"]:checked::before {
   color: var(--text-secondary);
 }
 
-/* Auth Info */
-.auth-info {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  padding: 0px 0px 16px;
-}
-
-.auth-details {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  background: var(--bg-secondary);
-  border-radius: 6px;
-}
-
-.auth-details .detail-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.auth-details .detail-label {
-  font-size: 10px;
-  color: var(--text-muted);
-}
-
-.auth-details .detail-row span:last-child {
-  font-size: 10px;
-  color: var(--text-secondary);
-}
-
 /* Auth Actions */
 .auth-actions {
   display: flex;
@@ -1783,4 +1748,95 @@ input[type="checkbox"]:checked::before {
   padding: 5px 10px;
   font-size: 10px;
   flex-shrink: 0;
+}
+
+/* ===== Confirm Modal ===== */
+.confirm-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.confirm-modal.hidden {
+  display: none;
+}
+
+.confirm-modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.confirm-modal-content {
+  position: relative;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 20px 24px;
+  min-width: 260px;
+  max-width: 320px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  animation: modalFadeIn 0.15s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.confirm-modal-content p {
+  margin: 0 0 20px 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.confirm-modal-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.confirm-btn {
+  flex: 1;
+  padding: 10px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.confirm-btn.cancel {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+
+.confirm-btn.cancel:hover {
+  background: var(--hover-bg);
+}
+
+.confirm-btn.ok {
+  background: var(--text-secondary);
+  color: var(--bg-primary);
+}
+
+.confirm-btn.ok:hover {
+  background: var(--text-primary);
 }

@@ -143,15 +143,6 @@
             </div>
           </div>
 
-          <div class="auth-info">
-            <div class="auth-details">
-              <div class="detail-row" id="expiryRow" style="display: none;">
-                <span class="detail-label">만료일</span>
-                <span id="tierExpiry">-</span>
-              </div>
-            </div>
-          </div>
-
           <div class="auth-actions">
             <button type="button" id="logoutBtn" class="btn-logout">로그아웃</button>
             <button type="button" id="upgradeBtn" class="btn-upgrade hidden">Pro 업그레이드</button>
@@ -195,6 +186,18 @@
         </div>
       </div>
     </main>
+  </div>
+
+  <!-- 확인 모달 -->
+  <div id="confirmModal" class="confirm-modal hidden">
+    <div class="confirm-modal-backdrop"></div>
+    <div class="confirm-modal-content">
+      <p id="confirmModalMessage">로그아웃하시겠습니까?</p>
+      <div class="confirm-modal-actions">
+        <button id="confirmModalCancel" class="confirm-btn cancel">취소</button>
+        <button id="confirmModalOk" class="confirm-btn ok">확인</button>
+      </div>
+    </div>
   </div>
 
   <script src="settings-renderer.js"></script>

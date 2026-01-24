@@ -10,6 +10,36 @@ const versionText = document.getElementById('versionText');
 const navItems = document.querySelectorAll('.nav-item');
 const sections = document.querySelectorAll('.section');
 
+// Confirm Modal elements
+const confirmModal = document.getElementById('confirmModal');
+const confirmModalMessage = document.getElementById('confirmModalMessage');
+const confirmModalCancel = document.getElementById('confirmModalCancel');
+const confirmModalOk = document.getElementById('confirmModalOk');
+const confirmModalBackdrop = confirmModal?.querySelector('.confirm-modal-backdrop');
+
+// Custom confirm function
+let confirmResolve = null;
+
+function showConfirmModal(message) {
+  return new Promise((resolve) => {
+    confirmResolve = resolve;
+    if (confirmModalMessage) confirmModalMessage.textContent = message;
+    confirmModal?.classList.remove('hidden');
+  });
+}
+
+function hideConfirmModal(result) {
+  confirmModal?.classList.add('hidden');
+  if (confirmResolve) {
+    confirmResolve(result);
+    confirmResolve = null;
+  }
+}
+
+confirmModalCancel?.addEventListener('click', () => hideConfirmModal(false));
+confirmModalOk?.addEventListener('click', () => hideConfirmModal(true));
+confirmModalBackdrop?.addEventListener('click', () => hideConfirmModal(false));
+
 // Tools page elements
 const openToolsListBtn = document.getElementById('openToolsListBtn');
 const backFromTools = document.getElementById('backFromTools');
@@ -704,7 +734,6 @@ const logoutBtn = document.getElementById('logoutBtn');
 const upgradeBtn = document.getElementById('upgradeBtn');
 const tierBadge = document.getElementById('tierBadge');
 const tierText = document.getElementById('tierText');
-const tierExpiry = document.getElementById('tierExpiry');
 
 // 프로필 UI 요소
 const userProfile = document.getElementById('userProfile');
@@ -760,16 +789,6 @@ function showLoggedInState(user) {
     tierText.textContent = tier === 'lifetime' ? 'LIFETIME' : tier.toUpperCase();
   }
 
-  // 만료일 표시 (pro만)
-  const expiryRow = document.getElementById('expiryRow');
-  if (tier === 'pro' && user.tierExpiresAt) {
-    const expDate = new Date(user.tierExpiresAt);
-    if (tierExpiry) tierExpiry.textContent = expDate.toLocaleDateString('ko-KR');
-    if (expiryRow) expiryRow.style.display = 'flex';
-  } else {
-    if (expiryRow) expiryRow.style.display = 'none';
-  }
-
   // 무료 사용자에게 업그레이드 버튼 표시
   if (upgradeBtn) {
     if (tier === 'free') {
@@ -817,7 +836,8 @@ loginBtn?.addEventListener('click', async () => {
 
 // 로그아웃 버튼 클릭
 logoutBtn?.addEventListener('click', async () => {
-  if (!confirm('로그아웃하시겠습니까?')) return;
+  const confirmed = await showConfirmModal('로그아웃하시겠습니까?');
+  if (!confirmed) return;
 
   logoutBtn.disabled = true;
   logoutBtn.textContent = '로그아웃 중...';
