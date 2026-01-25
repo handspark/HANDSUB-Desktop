@@ -767,6 +767,8 @@ const DEFAULT_AVATAR = 'https://www.gravatar.com/avatar/?d=mp&s=96';
 // 현재 인증 상태
 let currentUser = null;
 let currentAuthState = null;
+let lastProfileRefreshTime = 0;
+const PROFILE_REFRESH_THROTTLE = 5 * 60 * 1000;  // 5분
 
 // ===== Auth Functions (로그인 기반) =====
 
@@ -863,10 +865,13 @@ function showLoggedInState(user) {
 // 인증 초기화
 async function initAuth() {
   try {
-    // 로그인 기반 인증 확인
+    // 먼저 로컬 저장된 사용자 정보 표시 (빠른 UI 반응)
     const user = await window.settingsApi.authGetUser();
     if (user) {
       showLoggedInState(user);
+
+      // 백그라운드에서 서버에서 최신 프로필 가져오기 (티어 업데이트 반영)
+      refreshUserProfile();
       return;
     }
 
@@ -875,6 +880,30 @@ async function initAuth() {
   } catch (e) {
     console.error('[Auth] Init error:', e);
     showLoginState();
+  }
+}
+
+// 서버에서 최신 프로필 가져오기 (구매 후 티어 반영)
+// 쓰로틀링: 마지막 갱신 후 5분 이내면 스킵
+async function refreshUserProfile(force = false) {
+  const now = Date.now();
+  const timeSinceLastRefresh = now - lastProfileRefreshTime;
+
+  if (!force && timeSinceLastRefresh < PROFILE_REFRESH_THROTTLE) {
+    console.log(`[Auth] Profile refresh skipped (${Math.round(timeSinceLastRefresh / 1000)}s ago)`);
+    return;
+  }
+
+  try {
+    const result = await window.settingsApi.authRefresh();
+    if (result?.success && result?.user) {
+      lastProfileRefreshTime = now;
+      console.log('[Auth] Profile refreshed:', result.user.email, '| tier:', result.user.tier);
+      showLoggedInState(result.user);
+    }
+  } catch (e) {
+    console.log('[Auth] Profile refresh failed (using cached):', e.message);
+    // 실패해도 기존 정보 유지
   }
 }
 
@@ -936,6 +965,17 @@ window.settingsApi.onAuthLogout?.(() => {
   console.log('[Auth] Logged out');
   currentUser = null;
   showLoginState();
+});
+
+// 티어 실시간 업데이트 (WebSocket으로 구매 완료 시 즉시 반영)
+window.settingsApi.onTierUpdated?.((data) => {
+  console.log('[Auth] Tier updated via WebSocket:', data.tier);
+
+  if (currentUser) {
+    currentUser.tier = data.tier;
+    currentUser.tierExpiresAt = data.expiresAt;
+    showLoggedInState(currentUser);
+  }
 });
 
 // Auth 초기화

@@ -9,8 +9,12 @@ const SYNC_SERVER_URL = 'https://api.handsub.com';
 export const authState = {
   user: null,
   isLoggedIn: false,
-  isPro: false
+  isPro: false,
+  lastRefreshTime: 0  // 마지막 서버 갱신 시간
 };
+
+// 프로필 갱신 쓰로틀 시간 (5분)
+const PROFILE_REFRESH_THROTTLE = 5 * 60 * 1000;
 
 class AuthManager {
   constructor() {
@@ -62,6 +66,9 @@ class AuthManager {
     // 백그라운드에서 토큰 갱신 (24시간마다)
     this.startRefreshInterval();
 
+    // 백그라운드에서 서버에서 최신 프로필 가져오기 (구매 후 티어 반영)
+    this.refreshProfileOnInit();
+
     return { success: true, user: this.user };
   }
 
@@ -81,6 +88,7 @@ class AuthManager {
     try {
       const result = await window.api.authRefresh?.();
       if (result?.success && result.user) {
+        const oldTier = this.user?.tier;
         this.user = result.user;
         authState.user = this.user;
         authState.isPro = this.user.tier === 'pro' || this.user.tier === 'lifetime';
@@ -93,10 +101,49 @@ class AuthManager {
         };
 
         console.log('[Auth] Token refreshed');
+
+        // 티어가 변경되면 이벤트 발생
+        if (oldTier && oldTier !== this.user.tier) {
+          console.log(`[Auth] Tier changed: ${oldTier} → ${this.user.tier}`);
+          window.dispatchEvent(new CustomEvent('auth-tier-changed', {
+            detail: { oldTier, newTier: this.user.tier }
+          }));
+        }
+
+        return true;
       }
     } catch (e) {
       console.error('[Auth] Refresh error:', e);
     }
+    return false;
+  }
+
+  // 초기화 후 백그라운드에서 최신 프로필 확인 (구매 후 티어 반영)
+  // 쓰로틀링: 마지막 갱신 후 5분 이내면 스킵
+  async refreshProfileOnInit() {
+    const now = Date.now();
+    const timeSinceLastRefresh = now - authState.lastRefreshTime;
+
+    if (timeSinceLastRefresh < PROFILE_REFRESH_THROTTLE) {
+      console.log(`[Auth] Profile refresh skipped (${Math.round(timeSinceLastRefresh / 1000)}s ago)`);
+      return;
+    }
+
+    try {
+      const refreshed = await this.refresh();
+      if (refreshed) {
+        authState.lastRefreshTime = now;
+        console.log('[Auth] Profile synced with server');
+      }
+    } catch (e) {
+      console.log('[Auth] Profile sync failed (using cached):', e.message);
+    }
+  }
+
+  // 강제 프로필 갱신 (수동 새로고침 버튼용)
+  async forceRefresh() {
+    authState.lastRefreshTime = 0;  // 쓰로틀 초기화
+    return await this.refresh();
   }
 
   async logout() {
@@ -161,6 +208,33 @@ if (window.api?.onAuthLogout) {
     window.userProfile = null;
 
     window.dispatchEvent(new CustomEvent('auth-logout'));
+  });
+}
+
+// 티어 실시간 업데이트 (WebSocket으로 구매 완료 시 즉시 반영)
+if (window.api?.onTierUpdated) {
+  window.api.onTierUpdated((data) => {
+    console.log('[Auth] Tier updated via WebSocket:', data.tier);
+
+    if (authManager.user) {
+      const oldTier = authManager.user.tier;
+      authManager.user.tier = data.tier;
+      authManager.user.tierExpiresAt = data.expiresAt;
+
+      authState.user = authManager.user;
+      authState.isPro = data.tier === 'pro' || data.tier === 'lifetime';
+
+      if (window.userProfile) {
+        window.userProfile.tier = data.tier;
+      }
+
+      // 티어 변경 이벤트 발생
+      window.dispatchEvent(new CustomEvent('auth-tier-changed', {
+        detail: { oldTier, newTier: data.tier }
+      }));
+
+      console.log(`[Auth] Tier changed: ${oldTier} → ${data.tier}`);
+    }
   });
 }
 

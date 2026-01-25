@@ -73,4 +73,7 @@ contextBridge.exposeInMainWorld('settingsApi', {
   onAuthSuccess: (callback) => ipcRenderer.on('auth-success', (_, data) => callback(data)),
   onAuthError: (callback) => ipcRenderer.on('auth-error', (_, data) => callback(data)),
   onAuthLogout: (callback) => ipcRenderer.on('auth-logout', () => callback()),
+
+  // 티어 실시간 업데이트 (WebSocket)
+  onTierUpdated: (callback) => ipcRenderer.on('tier-updated', (_, data) => callback(data)),
 });

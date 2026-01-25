@@ -36,6 +36,7 @@ const quickShareTriggerListener = createSafeListener('quick-share-trigger');
 const authSuccessListener = createSafeListener('auth-success');
 const authErrorListener = createSafeListener('auth-error');
 const authLogoutListener = createSafeListener('auth-logout');
+const tierUpdatedListener = createSafeListener('tier-updated');
 
 // API for renderer (all DB operations go through main process)
 contextBridge.exposeInMainWorld('api', {
@@ -177,5 +178,9 @@ contextBridge.exposeInMainWorld('api', {
   onAuthError: (callback) => authErrorListener.on(callback),
   offAuthError: () => authErrorListener.off(),
   onAuthLogout: (callback) => authLogoutListener.on(callback),
-  offAuthLogout: () => authLogoutListener.off()
+  offAuthLogout: () => authLogoutListener.off(),
+
+  // ===== Tier Update (WebSocket) =====
+  onTierUpdated: (callback) => tierUpdatedListener.on(callback),
+  offTierUpdated: () => tierUpdatedListener.off()
 });

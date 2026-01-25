@@ -3124,6 +3124,9 @@ async function exchangeCodeForTokens(code, state) {
           w.webContents.send('auth-success', { user: response.user });
         }
       });
+
+      // WebSocket 연결 시작
+      connectWebSocket();
     } else {
       console.error('[Auth] Token exchange failed:', response);
       BrowserWindow.getAllWindows().forEach(w => {
@@ -3237,6 +3240,9 @@ ipcMain.handle('auth-logout', async () => {
   pendingAuthState = null;
   pendingAuthStateExpires = null;
 
+  // WebSocket 연결 해제
+  disconnectWebSocket();
+
   // 모든 창에 로그아웃 알림
   BrowserWindow.getAllWindows().forEach(w => {
     if (!w.isDestroyed()) {
@@ -3251,6 +3257,138 @@ ipcMain.handle('auth-refresh', async () => {
   const result = await refreshAuthTokens();
   return result ? { success: true, user: result.user } : { success: false };
 });
+
+// 앱 시작 시 프로필 갱신 (구매 후 티어 반영)
+async function refreshUserProfileOnStartup() {
+  try {
+    const auth = getStoredAuth();
+    if (!auth?.refreshToken) return;
+
+    console.log('[Auth] Refreshing profile on startup...');
+    const result = await refreshAuthTokens();
+    if (result?.user) {
+      console.log('[Auth] Profile refreshed:', result.user.email, '| tier:', result.user.tier);
+    }
+  } catch (e) {
+    console.log('[Auth] Startup profile refresh failed (using cached):', e.message);
+  }
+}
+
+// ===== WebSocket 실시간 알림 =====
+const WebSocket = require('ws');
+let wsConnection = null;
+let wsReconnectTimer = null;
+const WS_RECONNECT_DELAY = 5000;  // 5초 후 재연결
+
+function connectWebSocket() {
+  const auth = getStoredAuth();
+  if (!auth?.accessToken) {
+    console.log('[WS] Not logged in, skipping WebSocket connection');
+    return;
+  }
+
+  // 기존 연결이 있으면 닫기
+  if (wsConnection) {
+    wsConnection.close();
+    wsConnection = null;
+  }
+
+  const wsUrl = `wss://api.handsub.com/ws?token=${auth.accessToken}`;
+  console.log('[WS] Connecting...');
+
+  try {
+    wsConnection = new WebSocket(wsUrl);
+
+    wsConnection.on('open', () => {
+      console.log('[WS] Connected');
+      // 재연결 타이머 초기화
+      if (wsReconnectTimer) {
+        clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = null;
+      }
+    });
+
+    wsConnection.on('message', (data) => {
+      try {
+        const message = JSON.parse(data.toString());
+        console.log('[WS] Message received:', message.type);
+
+        // 티어 업데이트 처리
+        if (message.type === 'tier-updated') {
+          handleTierUpdate(message);
+        }
+      } catch (e) {
+        console.error('[WS] Message parse error:', e);
+      }
+    });
+
+    wsConnection.on('close', () => {
+      console.log('[WS] Disconnected');
+      wsConnection = null;
+      // 재연결 시도
+      scheduleReconnect();
+    });
+
+    wsConnection.on('error', (error) => {
+      console.error('[WS] Error:', error.message);
+    });
+
+  } catch (e) {
+    console.error('[WS] Connection error:', e);
+    scheduleReconnect();
+  }
+}
+
+function scheduleReconnect() {
+  if (wsReconnectTimer) return;  // 이미 예약됨
+
+  const auth = getStoredAuth();
+  if (!auth?.accessToken) return;  // 로그인 안 됨
+
+  wsReconnectTimer = setTimeout(() => {
+    wsReconnectTimer = null;
+    connectWebSocket();
+  }, WS_RECONNECT_DELAY);
+}
+
+function disconnectWebSocket() {
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = null;
+  }
+  if (wsConnection) {
+    wsConnection.close();
+    wsConnection = null;
+  }
+}
+
+// 티어 업데이트 처리 (구매 완료 시 실시간 반영)
+async function handleTierUpdate(message) {
+  console.log('[WS] Tier updated:', message.tier);
+
+  // 저장된 인증 정보 업데이트
+  const auth = getStoredAuth();
+  if (auth?.user) {
+    auth.user.tier = message.tier;
+    auth.user.tierExpiresAt = message.expiresAt;
+    await saveAuthTokens(auth);
+
+    // 캐시 업데이트
+    authCache = auth;
+
+    console.log('[WS] User tier saved:', message.tier);
+
+    // 모든 창에 알림 전송
+    BrowserWindow.getAllWindows().forEach(w => {
+      if (!w.isDestroyed()) {
+        w.webContents.send('tier-updated', {
+          tier: message.tier,
+          expiresAt: message.expiresAt
+        });
+      }
+    });
+  }
+}
 
 ipcMain.handle('auth-get-token', () => {
   const auth = getStoredAuth();
@@ -3396,6 +3534,12 @@ app.whenReady().then(() => {
 
   // 받은편지함 주기적 확인 (30초마다)
   startInboxPolling();
+
+  // 앱 시작 시 프로필 갱신 (구매 후 티어 반영)
+  refreshUserProfileOnStartup();
+
+  // WebSocket 실시간 알림 연결
+  connectWebSocket();
 
   app.on('activate', () => {
     // 이미 창이 표시 중이면 무시

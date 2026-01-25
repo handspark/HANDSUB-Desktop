@@ -1,4 +1,4 @@
-# HandSub
+# HANDSUB
 
 빠르고 가벼운 데스크톱 메모 앱. 단축키 한 번으로 언제든 메모하세요.
 
@@ -14,7 +14,7 @@ npm run build:mac
 ```
 
 ```bash
-open /Applications/HandSub.app
+open /Applications/HANDSUB.app
 ```
 ⚠️ 첫 실행 시: 우클릭 → 열기 (보안 경고 우회)
 
