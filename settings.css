@@ -1588,9 +1588,11 @@ input[type="checkbox"]:checked::before {
 
 /* Inline Upgrade Button (in profile row) */
 .btn-upgrade-inline {
-  padding: 5px 10px;
+  padding: 4px 10px;
   font-size: 10px;
-  font-weight: 500;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
   color: var(--text-secondary);
   background: transparent;
   border: 1px solid var(--border-color);
