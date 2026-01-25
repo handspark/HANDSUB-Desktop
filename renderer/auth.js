@@ -16,11 +16,46 @@ export const authState = {
 // 프로필 갱신 쓰로틀 시간 (5분)
 const PROFILE_REFRESH_THROTTLE = 5 * 60 * 1000;
 
+// 토큰 자동 갱신 주기 (50분 - access token 만료 전 여유)
+const TOKEN_REFRESH_INTERVAL = 50 * 60 * 1000;
+
+// 앱 활성화 시 갱신 최소 간격 (10분)
+const FOCUS_REFRESH_MIN_INTERVAL = 10 * 60 * 1000;
+
 class AuthManager {
   constructor() {
     this.user = null;
     this.refreshInterval = null;
     this._initPromise = null;
+    this.lastRefreshTime = 0;
+    this._setupVisibilityHandler();
+  }
+
+  // 앱이 활성화될 때 토큰 갱신 체크
+  _setupVisibilityHandler() {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && this.user) {
+        this._refreshOnFocus();
+      }
+    });
+
+    // 윈도우 포커스 이벤트도 처리
+    window.addEventListener('focus', () => {
+      if (this.user) {
+        this._refreshOnFocus();
+      }
+    });
+  }
+
+  async _refreshOnFocus() {
+    const now = Date.now();
+    const timeSinceLastRefresh = now - this.lastRefreshTime;
+
+    // 마지막 갱신 후 10분 이상 지났으면 갱신
+    if (timeSinceLastRefresh >= FOCUS_REFRESH_MIN_INTERVAL) {
+      console.log('[Auth] App activated, refreshing token...');
+      await this.refresh();
+    }
   }
 
   async init() {
@@ -63,7 +98,10 @@ class AuthManager {
     // 인증 완료 이벤트 발생
     window.dispatchEvent(new CustomEvent('auth-verified'));
 
-    // 백그라운드에서 토큰 갱신 (24시간마다)
+    // 마지막 갱신 시간 초기화
+    this.lastRefreshTime = Date.now();
+
+    // 백그라운드에서 토큰 갱신 (50분마다)
     this.startRefreshInterval();
 
     // 백그라운드에서 서버에서 최신 프로필 가져오기 (구매 후 티어 반영)
@@ -78,10 +116,10 @@ class AuthManager {
       clearInterval(this.refreshInterval);
     }
 
-    // 24시간마다 토큰 갱신
+    // 50분마다 토큰 갱신 (access token 만료 전 여유있게)
     this.refreshInterval = setInterval(async () => {
       await this.refresh();
-    }, 24 * 60 * 60 * 1000);
+    }, TOKEN_REFRESH_INTERVAL);
   }
 
   async refresh() {
@@ -92,6 +130,7 @@ class AuthManager {
         this.user = result.user;
         authState.user = this.user;
         authState.isPro = this.user.tier === 'pro' || this.user.tier === 'lifetime';
+        this.lastRefreshTime = Date.now();
 
         window.userProfile = {
           email: this.user.email,
