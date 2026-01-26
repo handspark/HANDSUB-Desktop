@@ -6,10 +6,9 @@ import { elements, memoState, timers, snippetState } from './state.js';
 import { getEditorContent, setEditorContent, getPlainText, getPlainTextFromHtml, stripInlineHandlers, applyStrikethrough, highlightTodoTimes } from './editor.js';
 import { clearLinkPreviews, processLinksInEditor } from './linkPreview.js';
 import { parseAllTodoTimes } from './timeParser.js';
-import { isValidFileUrl } from './security.js';
 import { startCollaboration, stopCollaboration, isCollaborating } from './collaboration.js';
 
-const { editor, statusbar, sidebar } = elements;
+const { editor, sidebar } = elements;
 
 // renderMemoList 콜백 (순환 참조 방지)
 let renderMemoListFn = null;
@@ -20,66 +19,29 @@ export function setRenderMemoListFn(fn) {
 // ===== 상태바 업데이트 =====
 
 export function updateStatusbar(time) {
+  // 상단 타이틀바 날짜 업데이트
+  const titlebarDate = document.getElementById('titlebar-date');
+
   if (!time) {
-    statusbar.textContent = '';
+    if (titlebarDate) titlebarDate.textContent = '';
     return;
   }
+
   const date = new Date(time);
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const hours = date.getHours();
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  const ampm = hours < 12 ? 'am' : 'pm';
-  const hour12 = String(hours % 12 || 12).padStart(2, '0');
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
 
-  const timeText = `${year}.${month}.${day} ${ampm}${hour12}:${minutes}`;
+  // 상단 바에 "2026년 1월 26일" 형식으로 표시
+  const dateText = `${year}년 ${month}월 ${day}일`;
+  if (titlebarDate) {
+    titlebarDate.textContent = dateText;
+  }
 
-  // XSS 방지 - DOM API 사용
-  statusbar.textContent = '';
-
-  // WebSocket 연결 상태 표시
-  const wsStatus = document.createElement('span');
-  wsStatus.id = 'ws-status';
-  wsStatus.className = 'ws-status disconnected';
-  wsStatus.title = '연결 상태 확인 중...';
-  statusbar.appendChild(wsStatus);
-
-  const timeSpan = document.createElement('span');
-  timeSpan.className = 'statusbar-time';
-  timeSpan.textContent = timeText;
-  statusbar.appendChild(timeSpan);
-
-  // 프로필 아이콘 (라이센스 연동 시)
-  if (window.userProfile) {
-    const profileBtn = document.createElement('button');
-    profileBtn.className = 'statusbar-profile';
-    profileBtn.title = '메모 전달';
-
-    const img = document.createElement('img');
-    const defaultAvatar = 'https://www.gravatar.com/avatar/?d=mp&s=32';
-    const avatarUrl = window.userProfile.avatarUrl;
-
-    // URL 검증 (XSS 방지)
-    if (avatarUrl && isValidFileUrl(avatarUrl)) {
-      img.src = avatarUrl;
-    } else {
-      img.src = defaultAvatar;
-    }
-    img.alt = '';
-    img.onerror = () => { img.src = defaultAvatar; };
-
-    profileBtn.appendChild(img);
-
-    // 프로필 버튼 클릭 이벤트
-    profileBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (memoState.currentMemo && window.openSharePopupFromStatusbar) {
-        window.openSharePopupFromStatusbar(memoState.currentMemo, profileBtn);
-      }
-    });
-
-    statusbar.appendChild(profileBtn);
+  // 프로필은 collab-participants에서 통합 관리 (collaboration.js)
+  // 협업 중이 아니어도 내 프로필 표시하도록 updateParticipantsList 호출
+  if (window.updateCollabParticipants) {
+    window.updateCollabParticipants();
   }
 }
 

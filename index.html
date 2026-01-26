@@ -14,6 +14,9 @@
         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="m2 7h20a1 1 0 0 0 0-2h-20a1 1 0 0 0 0 2z"/><path d="m22 11h-20a1 1 0 0 0 0 2h20a1 1 0 0 0 0-2z"/><path d="m22 17h-20a1 1 0 0 0 0 2h20a1 1 0 0 0 0-2z"/></svg>
       </button>
     </div>
+    <div class="titlebar-center">
+      <span id="titlebar-date"></span>
+    </div>
     <div class="titlebar-right">
       <button id="newBtn" title="새 메모">
         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
@@ -47,78 +50,50 @@
       <span>메모 공유</span>
       <button id="share-popup-close" class="share-popup-close">&times;</button>
     </div>
-    <!-- 메인 탭 (직접 전달 / 링크 공유) -->
+    <!-- 메인 탭 (공유 / 게시) -->
     <div class="share-main-tabs">
-      <button class="share-main-tab active" data-tab="direct">직접 전달</button>
-      <button class="share-main-tab" data-tab="link">링크 공유</button>
+      <button class="share-main-tab active" data-tab="share">공유</button>
+      <button class="share-main-tab" data-tab="publish">게시</button>
     </div>
-    <!-- 직접 전달 탭 -->
-    <div id="share-tab-direct" class="share-tab-content">
+    <!-- 공유 탭 (참여자 + 초대) -->
+    <div id="share-tab-share" class="share-tab-content">
       <div class="share-popup-content">
+        <!-- 이메일 초대 -->
         <div class="share-input-row">
           <input type="email" id="share-email-input" placeholder="이메일 주소 입력..." autocomplete="email">
-          <button id="share-send-btn" class="share-send-btn">전달</button>
+          <button id="share-send-btn" class="share-send-btn">초대</button>
         </div>
-        <!-- 그룹 탭 -->
-        <div id="share-group-tabs" class="share-group-tabs">
-          <button class="share-group-tab active" data-group="all">전체</button>
-          <!-- 동적으로 그룹 탭 추가됨 -->
-          <button class="share-group-tab add-group" title="그룹 추가">+</button>
-        </div>
-        <div id="share-contacts" class="share-contacts">
-          <!-- 최근 연락처가 여기에 표시됨 -->
+        <!-- 참여자 목록 -->
+        <div id="share-members-list" class="share-members-list">
+          <!-- 동적으로 참여자 목록 표시 -->
         </div>
       </div>
     </div>
-    <!-- 링크 공유 탭 -->
-    <div id="share-tab-link" class="share-tab-content hidden">
+    <!-- 게시 탭 (링크 공유) -->
+    <div id="share-tab-publish" class="share-tab-content hidden">
       <div class="share-popup-content">
-        <!-- 링크 생성 전 -->
+        <!-- 게시 전 -->
         <div id="share-link-create" class="share-link-create">
-          <div class="share-link-options">
-            <div class="share-link-option">
-              <label>만료 시간</label>
-              <select id="share-link-expires">
-                <option value="">만료 없음</option>
-                <option value="1">1시간</option>
-                <option value="24">24시간</option>
-                <option value="168">7일</option>
-                <option value="720">30일</option>
-              </select>
-            </div>
-            <div class="share-link-option">
-              <label>비밀번호 (선택)</label>
-              <input type="password" id="share-link-password" placeholder="비밀번호 입력...">
-            </div>
-          </div>
-          <button id="share-link-create-btn" class="share-send-btn full-width">링크 생성</button>
-          <p class="share-link-limit" id="share-link-limit-text"></p>
+          <p class="publish-desc">이 메모를 웹에 게시하면<br>링크를 가진 누구나 볼 수 있습니다.</p>
+          <button id="share-link-create-btn" class="share-send-btn full-width">게시</button>
         </div>
-        <!-- 링크 생성 후 -->
+        <!-- 게시 후 -->
         <div id="share-link-result" class="share-link-result hidden">
           <div class="share-link-url-row">
             <input type="text" id="share-link-url" readonly>
             <button id="share-link-copy-btn" class="share-send-btn">복사</button>
           </div>
-          <div class="share-link-info">
-            <span id="share-link-expires-text"></span>
-            <span id="share-link-password-text"></span>
+          <div class="publish-actions">
+            <button id="share-link-view-btn" class="publish-action-btn">링크 보기</button>
+            <button id="share-link-delete-btn" class="publish-action-btn">게시 취소</button>
           </div>
-          <button id="share-link-delete-btn" class="share-link-delete-btn">링크 삭제</button>
-        </div>
-        <!-- 내 공유 목록 -->
-        <div id="share-link-list" class="share-link-list">
-          <div class="share-link-list-header">
-            <span>내 공유 링크</span>
-          </div>
-          <div id="share-link-items"></div>
         </div>
       </div>
     </div>
     <div id="share-status" class="share-status hidden"></div>
   </div>
 
-  <!-- 그룹 생성/편집 다이얼로그 -->
+  <!-- 그룹 생성/편집 다이얼로그 (deprecated) -->
   <div id="group-dialog" class="group-dialog hidden">
     <div class="group-dialog-content">
       <div class="group-dialog-header">

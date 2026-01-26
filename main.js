@@ -3361,6 +3361,9 @@ function connectWebSocket() {
           case 'collab-leave':
             handleCollabLeave(message);
             break;
+          case 'collab-kicked':
+            handleCollabKicked(message);
+            break;
           case 'connected':
             console.log('[WS] Connected to server');
             // 연결 성공 시 렌더러에 알림
@@ -3549,6 +3552,16 @@ function handleCollabLeave(message) {
   });
 }
 
+function handleCollabKicked(message) {
+  // 강퇴 알림을 렌더러로 전달
+  currentCollabSession = null;
+  BrowserWindow.getAllWindows().forEach(w => {
+    if (!w.isDestroyed()) {
+      w.webContents.send('collab-kicked', message);
+    }
+  });
+}
+
 // 티어 업데이트 처리 (구매 완료 시 실시간 반영)
 async function handleTierUpdate(message) {
   console.log('[WS] Tier updated:', message.tier);
@@ -3654,6 +3667,21 @@ ipcMain.handle('collab-send-cursor', async (event, cursor) => {
     type: 'collab-cursor',
     sessionId: currentCollabSession.sessionId,
     cursor
+  }));
+
+  return { success: true };
+});
+
+// 참여자 내보내기
+ipcMain.handle('collab-kick', async (event, sessionId, targetUserId) => {
+  if (!wsConnection || wsConnection.readyState !== 1) {
+    return { success: false, error: 'Not connected' };
+  }
+
+  wsConnection.send(JSON.stringify({
+    type: 'collab-kick',
+    sessionId,
+    targetUserId
   }));
 
   return { success: true };

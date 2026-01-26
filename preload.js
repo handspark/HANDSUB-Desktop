@@ -46,6 +46,7 @@ const collabUpdateListener = createSafeListener('collab-update');
 const collabCursorListener = createSafeListener('collab-cursor');
 const collabJoinListener = createSafeListener('collab-join');      // 다른 사람 참가
 const collabLeaveListener = createSafeListener('collab-leave');
+const collabKickedListener = createSafeListener('collab-kicked');  // 강퇴당함
 
 // API for renderer (all DB operations go through main process)
 contextBridge.exposeInMainWorld('api', {
@@ -210,10 +211,13 @@ contextBridge.exposeInMainWorld('api', {
   offCollabJoin: () => collabJoinListener.off(),
   onCollabLeave: (callback) => collabLeaveListener.on(callback),
   offCollabLeave: () => collabLeaveListener.off(),
+  onCollabKicked: (callback) => collabKickedListener.on(callback),  // 강퇴당함
+  offCollabKicked: () => collabKickedListener.off(),
 
   // ===== 협업 API =====
   collabStart: (sessionId, memoUuid) => ipcRenderer.invoke('collab-start', sessionId, memoUuid),
   collabStop: () => ipcRenderer.invoke('collab-stop'),
   collabSendUpdate: (update) => ipcRenderer.invoke('collab-send-update', update),
-  collabSendCursor: (cursor) => ipcRenderer.invoke('collab-send-cursor', cursor)
+  collabSendCursor: (cursor) => ipcRenderer.invoke('collab-send-cursor', cursor),
+  collabKick: (sessionId, targetUserId) => ipcRenderer.invoke('collab-kick', sessionId, targetUserId)
 });

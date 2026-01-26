@@ -76,6 +76,16 @@ html, body {
   gap: 2px;
 }
 
+.titlebar-center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: var(--memo-date-color);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
 .titlebar-left button,
 .titlebar-right button {
   width: 22px;
@@ -752,10 +762,10 @@ html, body {
   z-index: 2000;
   background: var(--sidebar-bg);
   border: 1px solid var(--status-color);
-  border-radius: 10px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-  width: 280px;
-  max-height: 320px;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  width: 260px;
+  max-height: 300px;
   overflow: hidden;
 }
 
@@ -807,12 +817,11 @@ html, body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--status-color);
+  padding: 8px 12px;
 }
 
 .share-popup-header span {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--memo-title-color);
 }
@@ -821,7 +830,7 @@ html, body {
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 18px;
+  font-size: 16px;
   color: var(--memo-date-color);
   padding: 0;
   line-height: 1;
@@ -832,21 +841,20 @@ html, body {
 }
 
 .share-popup-content {
-  padding: 12px;
+  padding: 10px 12px;
 }
 
 .share-input-row {
   display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 6px;
 }
 
 .share-input-row input {
   flex: 1;
   border: 1px solid var(--status-color);
-  border-radius: 6px;
-  padding: 8px 10px;
-  font-size: 12px;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 11px;
   background: transparent;
   color: var(--memo-title-color);
   outline: none;
@@ -864,9 +872,9 @@ html, body {
   border: 1px solid var(--status-color);
   background: transparent;
   color: var(--memo-title-color);
-  border-radius: 6px;
-  padding: 8px 14px;
-  font-size: 12px;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 11px;
   font-weight: 500;
   cursor: pointer;
 }
@@ -1162,19 +1170,19 @@ html, body {
 /* ===== Share Main Tabs (직접 전달 / 링크 공유) ===== */
 .share-main-tabs {
   display: flex;
+  gap: 4px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--status-color);
 }
 
 .share-main-tab {
-  flex: 1;
-  padding: 10px;
+  padding: 8px 12px;
   border: none;
   background: transparent;
   color: var(--memo-date-color);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
 }
@@ -1201,48 +1209,40 @@ html, body {
   display: none;
 }
 
-.share-link-options {
-  margin-bottom: 12px;
-}
-
-.share-link-option {
-  margin-bottom: 10px;
-}
-
-.share-link-option label {
-  display: block;
+.publish-desc {
   font-size: 11px;
   color: var(--memo-date-color);
-  margin-bottom: 4px;
-}
-
-.share-link-option select,
-.share-link-option input {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--status-color);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--memo-title-color);
-  font-size: 12px;
-  outline: none;
-}
-
-.share-link-option select:focus,
-.share-link-option input:focus {
-  border-color: var(--memo-date-color);
+  text-align: center;
+  margin-bottom: 12px;
+  line-height: 1.4;
 }
 
 .share-send-btn.full-width {
   width: 100%;
 }
 
-.share-link-limit {
-  font-size: 10px;
-  color: var(--memo-date-color);
-  text-align: center;
-  margin-top: 8px;
+.publish-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
 }
+
+.publish-action-btn {
+  flex: 1;
+  background: transparent;
+  border: 1px solid var(--status-color);
+  color: var(--memo-date-color);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.publish-action-btn:hover {
+  border-color: var(--memo-date-color);
+  color: var(--memo-title-color);
+}
+
 
 /* ===== Link Share - Result ===== */
 .share-link-result {
@@ -1255,109 +1255,194 @@ html, body {
 
 .share-link-url-row {
   display: flex;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 
 .share-link-url-row input {
   flex: 1;
-  padding: 8px 10px;
+  padding: 6px 8px;
   border: 1px solid var(--status-color);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--hover-bg);
   color: var(--memo-title-color);
-  font-size: 11px;
+  font-size: 10px;
   outline: none;
 }
 
-.share-link-info {
+
+/* ===== Members Tab ===== */
+.share-members-list {
   display: flex;
-  justify-content: center;
-  gap: 12px;
-  font-size: 10px;
-  color: var(--memo-date-color);
-  margin-bottom: 12px;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
 }
 
-.share-link-delete-btn {
-  background: transparent;
-  border: 1px solid var(--status-color);
+.share-members-empty {
+  text-align: center;
   color: var(--memo-date-color);
-  border-radius: 6px;
-  padding: 6px 12px;
   font-size: 11px;
-  cursor: pointer;
+  padding: 16px;
 }
 
-.share-link-delete-btn:hover {
-  border-color: var(--memo-date-color);
-  color: var(--memo-title-color);
-}
-
-/* ===== Link Share - List ===== */
-.share-link-list {
-  margin-top: 16px;
-  border-top: 1px solid var(--status-color);
-  padding-top: 12px;
-}
-
-.share-link-list.hidden {
-  display: none;
-}
-
-.share-link-list-header {
-  font-size: 10px;
-  color: var(--memo-date-color);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 8px;
-}
-
-.share-link-item {
+.share-member-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px;
-  border-radius: 6px;
-  margin-bottom: 4px;
+  padding: 6px 4px;
+  border-radius: 4px;
 }
 
-.share-link-item:hover {
+.share-member-item:hover {
   background: var(--hover-bg);
 }
 
-.share-link-item-info {
+.share-member-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #666;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.share-member-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.share-member-info {
   flex: 1;
   min-width: 0;
 }
 
-.share-link-item-title {
+.share-member-name {
   font-size: 12px;
+  font-weight: 500;
   color: var(--memo-title-color);
-  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.share-member-name .host-badge {
+  font-size: 9px;
+}
+
+.share-member-email {
+  font-size: 10px;
+  color: var(--memo-date-color);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.share-link-item-meta {
-  font-size: 10px;
-  color: var(--memo-date-color);
+.share-member-permission {
+  position: relative;
 }
 
-.share-link-item-copy {
+.share-member-permission select {
+  appearance: none;
   background: transparent;
   border: 1px solid var(--status-color);
+  border-radius: 6px;
+  padding: 4px 24px 4px 8px;
+  font-size: 11px;
   color: var(--memo-date-color);
-  border-radius: 4px;
-  padding: 4px 8px;
-  font-size: 10px;
   cursor: pointer;
-  flex-shrink: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='%23888'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
 }
 
-.share-link-item-copy:hover {
+.share-member-permission select:hover {
   border-color: var(--memo-date-color);
+}
+
+.share-member-permission select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* 권한 버튼 */
+.share-member-permission-btn {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: transparent;
+  border: none;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--memo-date-color);
+  cursor: pointer;
+}
+
+.share-member-permission-btn:hover:not(:disabled) {
+  background: var(--hover-bg);
   color: var(--memo-title-color);
+}
+
+.share-member-permission-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.share-member-permission-btn svg {
+  opacity: 0.6;
+}
+
+/* 권한 선택 팝업 메뉴 */
+.permission-menu {
+  position: fixed;
+  background: var(--sidebar-bg);
+  border: 1px solid var(--status-color);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  min-width: 140px;
+  z-index: 3000;
+  padding: 4px;
+}
+
+.permission-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.permission-menu-item:hover {
+  background: var(--hover-bg);
+}
+
+.permission-menu-item.remove {
+  border-top: 1px solid var(--status-color);
+  margin-top: 4px;
+  padding-top: 10px;
+}
+
+.permission-menu-content {
+  flex: 1;
+}
+
+.permission-menu-label {
+  font-size: 12px;
+  color: var(--memo-title-color);
+}
+
+
+.permission-menu-desc {
+  display: none;
+}
+
+.permission-check {
+  color: var(--accent);
+  flex-shrink: 0;
+  font-size: 11px;
 }
 
 /* ===== Collaboration - WebSocket Status ===== */
@@ -1393,36 +1478,78 @@ html, body {
 .remote-cursor {
   position: fixed;
   width: 2px;
-  pointer-events: none;
+  pointer-events: auto;
   z-index: 1000;
-  animation: cursor-blink 1s infinite;
+  cursor: default;
+  /* 호버 영역 확대를 위한 패딩 */
+  padding: 0 8px;
+  margin-left: -8px;
+  background-clip: content-box;
 }
 
-@keyframes cursor-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+/* 호버 시 표시되는 툴팁 (프로필 + 이름) */
+.remote-cursor-tooltip {
+  position: absolute;
+  left: 8px;
+  bottom: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 4px;
+  border-radius: 12px;
+  white-space: nowrap;
+  margin-bottom: 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+  pointer-events: none;
+}
+
+.remote-cursor-tooltip img {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(255,255,255,0.3);
+}
+
+.remote-cursor-tooltip span {
+  font-size: 11px;
+  font-weight: 500;
+  color: white;
+}
+
+/* 호버 시 툴팁 표시 */
+.remote-cursor:hover .remote-cursor-tooltip {
+  opacity: 1;
+  visibility: visible;
 }
 
 .remote-cursor-label {
   position: absolute;
-  top: -20px;
   left: 0;
+  bottom: 100%;
   padding: 2px 6px;
-  font-size: 10px;
+  font-size: 11px;
+  font-weight: 500;
   color: white;
-  border-radius: 3px;
+  border-radius: 3px 3px 3px 0;
   white-space: nowrap;
-  transform: translateX(-50%);
+  margin-bottom: 2px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  /* 기존 라벨은 숨김 - 툴팁으로 대체 */
+  display: none;
 }
 
 /* ===== Collaboration - Participants (겹치는 프로필) ===== */
 #collab-participants {
   display: flex;
   align-items: center;
-  position: absolute;
-  bottom: 6px;
-  right: 130px;  /* 상태바 시간 왼쪽에 위치 */
-  z-index: 100;
+  position: fixed;
+  bottom: 12px;
+  right: 16px;
+  z-index: 1000;
 }
 
 #collab-participants:empty {
@@ -1433,8 +1560,9 @@ html, body {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: var(--sidebar-bg);
-  border: 2px solid;
+  background: #888;
+  border: 2px solid #666;
+  box-sizing: content-box;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1443,9 +1571,8 @@ html, body {
   color: white;
   cursor: default;
   margin-left: -6px;
-  transition: transform 0.15s ease, z-index 0s;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .collab-participant:first-child {
@@ -1453,8 +1580,7 @@ html, body {
 }
 
 .collab-participant:hover {
-  transform: scale(1.15) translateY(-2px);
-  z-index: 10;
+  /* hover 효과 제거 */
 }
 
 .collab-participant img {
@@ -1462,6 +1588,7 @@ html, body {
   height: 100%;
   object-fit: cover;
   border-radius: 50%;
+  display: block;
 }
 
 .collab-participant.is-me {
@@ -1484,6 +1611,73 @@ html, body {
 @keyframes pulse {
   0%, 100% { transform: scale(1); opacity: 1; }
   50% { transform: scale(1.2); opacity: 0.7; }
+}
+
+/* 방장 왕관 아이콘 */
+.host-crown {
+  position: absolute;
+  top: -8px;
+  right: -4px;
+  font-size: 12px;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3));
+}
+
+/* 참여자 내보내기 다이얼로그 */
+.kick-confirm-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.kick-confirm-content {
+  background: var(--sidebar-bg);
+  padding: 20px;
+  border-radius: 12px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.kick-confirm-content p {
+  margin-bottom: 16px;
+}
+
+.kick-confirm-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.kick-confirm-actions button {
+  padding: 8px 20px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.kick-cancel {
+  background: var(--hover-bg);
+  color: var(--memo-title-color);
+}
+
+.kick-confirm {
+  background: #FF3B30;
+  color: white;
+}
+
+.kick-cancel:hover {
+  background: var(--active-bg);
+}
+
+.kick-confirm:hover {
+  background: #E02020;
 }
 
 /* ===== Collaboration - Notifications ===== */

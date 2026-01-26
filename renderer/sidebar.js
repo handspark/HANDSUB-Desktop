@@ -28,7 +28,7 @@ let contactsCache = null;  // 연락처 캐시
 let groupsCache = [];      // 그룹 캐시
 let currentGroupFilter = 'all';  // 현재 선택된 그룹 필터
 let editingGroup = null;   // 편집 중인 그룹
-let currentShareTab = 'direct';  // 현재 공유 탭
+let currentShareTab = 'share';  // 현재 공유 탭
 let currentShareToken = null;  // 현재 생성된 공유 토큰
 let mySharesCache = [];  // 내 공유 목록 캐시
 
@@ -324,13 +324,13 @@ function openSharePopup(memo, btnEl) {
 
   popup.classList.remove('hidden');
 
+  // 기본 탭을 '공유'로 설정하고 참여자 목록 렌더링
+  switchMainTab('share');
+
   // Pro 사용자만 입력 필드에 포커스
   if (isPro()) {
     emailInput.focus();
   }
-
-  // 최근 연락처 로드
-  loadShareContacts();
 }
 
 function closeSharePopup() {
@@ -816,16 +816,17 @@ function switchMainTab(tabName) {
   });
 
   // 탭 콘텐츠 표시/숨김
-  const directTab = document.getElementById('share-tab-direct');
-  const linkTab = document.getElementById('share-tab-link');
+  const shareTab = document.getElementById('share-tab-share');
+  const publishTab = document.getElementById('share-tab-publish');
 
-  if (tabName === 'direct') {
-    directTab.classList.remove('hidden');
-    linkTab.classList.add('hidden');
-  } else {
-    directTab.classList.add('hidden');
-    linkTab.classList.remove('hidden');
-    // 링크 공유 탭 초기화
+  shareTab.classList.add('hidden');
+  publishTab.classList.add('hidden');
+
+  if (tabName === 'share') {
+    shareTab.classList.remove('hidden');
+    renderMembersTab();  // 공유 탭에서 참여자 목록 렌더링
+  } else if (tabName === 'publish') {
+    publishTab.classList.remove('hidden');
     initLinkShareTab();
   }
 }
@@ -836,6 +837,7 @@ function initShareLinkEvents() {
   const createBtn = document.getElementById('share-link-create-btn');
   const copyBtn = document.getElementById('share-link-copy-btn');
   const deleteBtn = document.getElementById('share-link-delete-btn');
+  const viewBtn = document.getElementById('share-link-view-btn');
 
   if (createBtn) {
     createBtn.addEventListener('click', createShareLink);
@@ -848,26 +850,209 @@ function initShareLinkEvents() {
   if (deleteBtn) {
     deleteBtn.addEventListener('click', deleteShareLink);
   }
+
+  if (viewBtn) {
+    viewBtn.addEventListener('click', viewShareLink);
+  }
 }
+
+function viewShareLink() {
+  const linkUrl = document.getElementById('share-link-url')?.value;
+  if (linkUrl) {
+    window.api.openExternal(linkUrl);
+  }
+}
+
+// ===== 참여자 탭 =====
+
+function renderMembersTab() {
+  const listContainer = document.getElementById('share-members-list');
+  if (!listContainer) return;
+
+  listContainer.innerHTML = '';
+
+  // 협업 상태 가져오기
+  const { collabState } = window.collabModule || {};
+  const isCollaborating = collabState?.isCollaborating || false;
+  const isHost = collabState?.isHost || false;
+  const participants = collabState?.participants || new Map();
+
+  // 나 자신 추가
+  const members = [];
+  if (window.userProfile) {
+    members.push({
+      id: 'me',
+      name: window.userProfile.name || window.userProfile.email?.split('@')[0] || '나',
+      email: window.userProfile.email || '',
+      avatarUrl: window.userProfile.avatarUrl,
+      isMe: true,
+      isHost: isHost || !isCollaborating,
+      permission: 'full'
+    });
+  }
+
+  // 다른 참여자들 추가
+  if (isCollaborating) {
+    participants.forEach((p, oduserId) => {
+      members.push({
+        id: oduserId,
+        name: p.name || '참여자',
+        email: p.email || '',
+        avatarUrl: p.avatarUrl,
+        isMe: false,
+        isHost: false,
+        permission: p.permission || 'edit'
+      });
+    });
+  }
+
+  // 빈 상태 처리
+  if (members.length === 0) {
+    listContainer.innerHTML = '<div class="share-members-empty">아직 참여자가 없습니다</div>';
+    return;
+  }
+
+  // 멤버 목록 렌더링
+  members.forEach(member => {
+    const item = document.createElement('div');
+    item.className = 'share-member-item';
+
+    const defaultAvatar = 'https://www.gravatar.com/avatar/?d=mp&s=64';
+    const permissionLabels = {
+      full: '전체 허용',
+      edit: '편집 허용',
+      view: '읽기 허용'
+    };
+
+    item.innerHTML = `
+      <div class="share-member-avatar">
+        <img src="${member.avatarUrl || defaultAvatar}" alt="" onerror="this.src='${defaultAvatar}'">
+      </div>
+      <div class="share-member-info">
+        <div class="share-member-name">
+          ${member.name}${member.isMe ? ' (나)' : ''}
+        </div>
+        <div class="share-member-email">${member.email}</div>
+      </div>
+      <button class="share-member-permission-btn" ${!isHost || member.isMe ? 'disabled' : ''}>
+        ${permissionLabels[member.permission] || '전체 허용'}
+        <svg viewBox="0 0 24 24" width="12" height="12"><path d="M7 10l5 5 5-5z" fill="currentColor"/></svg>
+      </button>
+    `;
+
+    // 권한 버튼 클릭 이벤트
+    const permBtn = item.querySelector('.share-member-permission-btn');
+    if (permBtn && isHost && !member.isMe) {
+      permBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showPermissionMenu(permBtn, member);
+      });
+    }
+
+    listContainer.appendChild(item);
+  });
+}
+
+// 권한 선택 팝업 메뉴
+function showPermissionMenu(anchorEl, member) {
+  // 기존 메뉴 제거
+  const existing = document.querySelector('.permission-menu');
+  if (existing) existing.remove();
+
+  const menu = document.createElement('div');
+  menu.className = 'permission-menu';
+
+  const options = [
+    { value: 'full', label: '전체 허용' },
+    { value: 'edit', label: '편집 허용' },
+    { value: 'view', label: '읽기 허용' },
+    { value: 'remove', label: '제거' }
+  ];
+
+  options.forEach(opt => {
+    const item = document.createElement('div');
+    item.className = 'permission-menu-item' + (opt.value === 'remove' ? ' remove' : '');
+
+    const isSelected = member.permission === opt.value;
+
+    item.innerHTML = `
+      <div class="permission-menu-content">
+        <div class="permission-menu-label">${opt.label}</div>
+      </div>
+      ${isSelected ? '<svg class="permission-check" viewBox="0 0 24 24" width="16" height="16"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="currentColor"/></svg>' : ''}
+    `;
+
+    item.addEventListener('click', () => {
+      menu.remove();
+      if (opt.value === 'remove') {
+        handleRemoveMember(member.id, member.name);
+      } else {
+        handlePermissionChange(member.id, opt.value);
+        anchorEl.innerHTML = `${opt.label} <svg viewBox="0 0 24 24" width="12" height="12"><path d="M7 10l5 5 5-5z" fill="currentColor"/></svg>`;
+      }
+    });
+
+    menu.appendChild(item);
+  });
+
+  // 위치 계산
+  const rect = anchorEl.getBoundingClientRect();
+  document.body.appendChild(menu);
+
+  const menuHeight = menu.offsetHeight;
+  const spaceBelow = window.innerHeight - rect.bottom;
+
+  // 아래 공간이 부족하면 위로 표시
+  if (spaceBelow < menuHeight + 10) {
+    menu.style.bottom = `${window.innerHeight - rect.top + 4}px`;
+  } else {
+    menu.style.top = `${rect.bottom + 4}px`;
+  }
+  menu.style.right = `${window.innerWidth - rect.right}px`;
+
+  // 바깥 클릭 시 닫기
+  const closeMenu = (e) => {
+    if (!menu.contains(e.target) && e.target !== anchorEl) {
+      menu.remove();
+      document.removeEventListener('click', closeMenu);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', closeMenu), 0);
+}
+
+function handleRemoveMember(memberId, memberName) {
+  if (confirm(`${memberName}님을 내보내시겠습니까?`)) {
+    // 기존 kick 기능 사용
+    if (window.collabModule?.kickParticipant) {
+      window.collabModule.kickParticipant(memberId, memberName);
+    } else if (window.api?.collabKick) {
+      const { collabState } = window.collabModule || {};
+      window.api.collabKick(collabState?.sessionId, memberId);
+    }
+    // 목록 새로고침
+    setTimeout(renderMembersTab, 500);
+  }
+}
+
+function handlePermissionChange(memberId, permission) {
+  console.log('[Share] Permission change:', memberId, permission);
+  // TODO: 서버에 권한 변경 요청
+  // 현재는 로컬 상태만 변경
+  const { collabState } = window.collabModule || {};
+  if (collabState?.participants?.has(memberId)) {
+    collabState.participants.get(memberId).permission = permission;
+  }
+}
+
+// ===== 링크 공유 기능 =====
 
 async function initLinkShareTab() {
   const createSection = document.getElementById('share-link-create');
   const resultSection = document.getElementById('share-link-result');
-  const limitText = document.getElementById('share-link-limit-text');
 
-  // 항상 Pro UI 표시 (오버레이가 Free 사용자 차단)
+  // 기본 UI 표시
   createSection.classList.remove('hidden');
   resultSection.classList.add('hidden');
-
-  // 제한 텍스트
-  const userTier = window.userProfile?.tier;
-  const shareLimit = userTier === 'lifetime' ? 10 : 5;
-  limitText.textContent = `최대 ${shareLimit}개의 링크를 생성할 수 있습니다`;
-
-  // Pro 사용자만 공유 목록 로드
-  if (isPro()) {
-    await loadMyShares();
-  }
 }
 
 async function createShareLink() {
@@ -875,42 +1060,37 @@ async function createShareLink() {
 
   const createBtn = document.getElementById('share-link-create-btn');
   const status = document.getElementById('share-status');
-  const expiresSelect = document.getElementById('share-link-expires');
-  const passwordInput = document.getElementById('share-link-password');
 
   createBtn.disabled = true;
-  status.className = 'share-status loading';
-  status.textContent = '링크 생성 중...';
+  createBtn.textContent = '게시 중...';
 
   try {
     const result = await window.api.createShareLink({
       content: sharePopupMemo.content,
       memoUuid: sharePopupMemo.uuid,
-      expiresIn: expiresSelect.value || null,
-      password: passwordInput.value || null
+      expiresIn: null,
+      password: null
     });
 
     if (result.success) {
       currentShareToken = result.token;
       showShareLinkResult(result);
-      status.className = 'share-status success';
-      status.textContent = '링크가 생성되었습니다';
-
-      // 목록 새로고침
-      await loadMyShares();
     } else {
       status.className = 'share-status error';
+      status.classList.remove('hidden');
       if (result.error === 'share_limit_exceeded') {
         status.textContent = result.message || '공유 제한에 도달했습니다';
       } else {
-        status.textContent = result.message || '링크 생성 실패';
+        status.textContent = result.message || '게시 실패';
       }
     }
   } catch (e) {
     status.className = 'share-status error';
-    status.textContent = '링크 생성 중 오류 발생';
+    status.classList.remove('hidden');
+    status.textContent = '게시 중 오류 발생';
   } finally {
     createBtn.disabled = false;
+    createBtn.textContent = '게시';
   }
 }
 
@@ -918,22 +1098,11 @@ function showShareLinkResult(result) {
   const createSection = document.getElementById('share-link-create');
   const resultSection = document.getElementById('share-link-result');
   const urlInput = document.getElementById('share-link-url');
-  const expiresText = document.getElementById('share-link-expires-text');
-  const passwordText = document.getElementById('share-link-password-text');
 
   createSection.classList.add('hidden');
   resultSection.classList.remove('hidden');
 
   urlInput.value = result.shareUrl;
-
-  if (result.expiresAt) {
-    const date = new Date(result.expiresAt);
-    expiresText.textContent = `만료: ${date.toLocaleDateString('ko-KR')} ${date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`;
-  } else {
-    expiresText.textContent = '만료 없음';
-  }
-
-  passwordText.textContent = result.hasPassword ? '비밀번호 설정됨' : '';
 }
 
 async function copyShareLink() {
@@ -963,8 +1132,7 @@ async function deleteShareLink() {
   const status = document.getElementById('share-status');
 
   deleteBtn.disabled = true;
-  status.className = 'share-status loading';
-  status.textContent = '삭제 중...';
+  deleteBtn.textContent = '취소 중...';
 
   try {
     const result = await window.api.deleteShareLink(currentShareToken);
@@ -977,25 +1145,18 @@ async function deleteShareLink() {
       const resultSection = document.getElementById('share-link-result');
       createSection.classList.remove('hidden');
       resultSection.classList.add('hidden');
-
-      // 입력 필드 초기화
-      document.getElementById('share-link-expires').value = '';
-      document.getElementById('share-link-password').value = '';
-
-      status.className = 'share-status success';
-      status.textContent = '링크가 삭제되었습니다';
-
-      // 목록 새로고침
-      await loadMyShares();
     } else {
       status.className = 'share-status error';
-      status.textContent = result.message || '삭제 실패';
+      status.classList.remove('hidden');
+      status.textContent = result.message || '게시 취소 실패';
     }
   } catch (e) {
     status.className = 'share-status error';
-    status.textContent = '삭제 중 오류 발생';
+    status.classList.remove('hidden');
+    status.textContent = '게시 취소 중 오류 발생';
   } finally {
     deleteBtn.disabled = false;
+    deleteBtn.textContent = '게시 취소';
   }
 }
 

@@ -236,6 +236,9 @@ export async function startCollaboration(memoUuid, content) {
     const { sessionId, existing, isOwner } = await response.json();
     console.log('[Collab] API returned sessionId:', sessionId, 'existing:', existing, 'isOwner:', isOwner);
 
+    // 방장 여부 저장
+    collabState.isHost = isOwner;
+
     // WebSocket 세션 참가
     const result = await window.api.collabStart(sessionId, memoUuid);
     if (!result.success) {
@@ -247,11 +250,10 @@ export async function startCollaboration(memoUuid, content) {
     collabState.lastLines = JSON.parse(JSON.stringify(collabState.lines));
 
     collabState.sessionId = sessionId;
-    collabState.isHost = !existing;
     collabState.isCollaborating = true;
 
     // 호스트면 초기 상태 전송
-    if (!existing) {
+    if (isOwner && !existing) {
       sendFullSync();
     }
 
@@ -441,6 +443,7 @@ function renderRemoteLineIndicator(userId, participant) {
   if (participant.lineIndex < 0) return;
 
   const editor = elements.editor;
+  const editorRect = editor.getBoundingClientRect();
   const lines = editor.innerText.split('\n');
 
   if (participant.lineIndex >= lines.length) return;
@@ -454,26 +457,33 @@ function renderRemoteLineIndicator(userId, participant) {
   const rect = getCaretRect(editor, offset);
   if (!rect) return;
 
-  // 줄 하이라이트 오버레이
+  // 커서 컨테이너 (에디터 기준 상대 위치)
+  const cursorLeft = editorRect.left + 2;
+  const cursorTop = rect.top;
+
+  // 기본 Gravatar 아바타
+  const defaultAvatar = 'https://www.gravatar.com/avatar/?d=mp&s=32';
+  const avatarUrl = participant.avatarUrl || defaultAvatar;
+
+  // 커서 오버레이 (세로 막대 + 호버 영역)
   const overlay = document.createElement('div');
-  overlay.className = 'remote-cursor remote-line-indicator';
+  overlay.className = 'remote-cursor';
   overlay.dataset.userId = userId;
-  overlay.style.backgroundColor = participant.cursorColor;
-  overlay.style.left = '0';
-  overlay.style.top = rect.top + 'px';
+  overlay.style.left = (cursorLeft - 8) + 'px';  // 패딩 보정
+  overlay.style.top = cursorTop + 'px';
   overlay.style.height = rect.height + 'px';
-  overlay.style.width = '3px';
-  overlay.style.opacity = '0.7';
+  overlay.style.backgroundColor = participant.cursorColor || '#666';
 
-  const label = document.createElement('div');
-  label.className = 'remote-cursor-label';
-  label.textContent = participant.name;
-  label.style.backgroundColor = participant.cursorColor;
-  label.style.left = '8px';
-  label.style.top = '0';
-  label.style.transform = 'none';
+  // 툴팁 (프로필 + 이름) - hover 시에만 표시
+  const tooltip = document.createElement('div');
+  tooltip.className = 'remote-cursor-tooltip';
+  tooltip.innerHTML = `
+    <img src="${avatarUrl}" alt="" onerror="this.src='${defaultAvatar}'">
+    <span>${participant.name || '참여자'}</span>
+  `;
+  tooltip.style.backgroundColor = participant.cursorColor || '#666';
 
-  overlay.appendChild(label);
+  overlay.appendChild(tooltip);
   document.body.appendChild(overlay);
   cursorOverlays.set(userId, overlay);
 }
@@ -521,6 +531,7 @@ function removeAllCursorOverlays() {
 // ===== 참여자 관리 =====
 
 export function handleParticipantJoin(userId, userName, cursorColor, avatarUrl) {
+  console.log('[Collab] Participant joined:', userName, 'avatarUrl:', avatarUrl);
   collabState.participants.set(userId, {
     name: userName,
     cursorColor,
@@ -546,48 +557,68 @@ export function handleParticipantLeave(userId, userName) {
 
 function updateParticipantsList() {
   const container = document.getElementById('collab-participants');
-  if (!container) return;
+  if (!container) {
+    console.log('[Collab] No container found');
+    return;
+  }
 
   container.innerHTML = '';
 
-  // 나 자신도 표시
-  if (collabState.isCollaborating && collabState.myColor) {
-    const myAvatar = createParticipantAvatar({
-      name: '나',
-      cursorColor: collabState.myColor,
-      avatarUrl: window.userProfile?.avatarUrl,
-      isTyping: false
-    }, true);
-    container.appendChild(myAvatar);
+  // 로그인하지 않으면 프로필 표시 안 함
+  if (!window.userProfile) {
+    console.log('[Collab] No userProfile');
+    return;
   }
 
-  // 다른 참여자들
-  collabState.participants.forEach((participant, oduserId) => {
-    const avatar = createParticipantAvatar(participant, false);
-    container.appendChild(avatar);
-  });
+  // 내 프로필 표시
+  const myColor = collabState.isCollaborating ? collabState.myColor : '#666';
+  const isHost = collabState.isHost;
+  const myAvatar = createParticipantAvatar({
+    name: '나',
+    cursorColor: myColor,
+    avatarUrl: window.userProfile.avatarUrl,
+    isTyping: false
+  }, true, isHost);
+
+  container.appendChild(myAvatar);
+
+  // 협업 중이면 다른 참여자들도 표시
+  if (collabState.isCollaborating) {
+    collabState.participants.forEach((participant) => {
+      const avatar = createParticipantAvatar(participant, false, false);
+      container.appendChild(avatar);
+    });
+  }
+
+  // 전체 컨테이너 클릭 시 공유 팝업 열기
+  container.style.cursor = 'pointer';
+  container.onclick = (e) => {
+    e.stopPropagation();
+    if (memoState.currentMemo && window.openSharePopupFromStatusbar) {
+      window.openSharePopupFromStatusbar(memoState.currentMemo, container);
+    }
+  };
 }
 
-function createParticipantAvatar(participant, isMe) {
+// 전역 함수로 등록 (memo.js에서 호출용)
+window.updateCollabParticipants = updateParticipantsList;
+
+function createParticipantAvatar(participant, isMe, isHost) {
   const avatar = document.createElement('div');
   avatar.className = 'collab-participant' + (isMe ? ' is-me' : '');
-  avatar.style.borderColor = participant.cursorColor;
-  avatar.style.backgroundColor = participant.cursorColor;
   avatar.title = participant.name || '참여자';
 
-  // 프로필 이미지가 있으면 이미지, 없으면 이니셜
-  if (participant.avatarUrl) {
-    const img = document.createElement('img');
-    img.src = participant.avatarUrl;
-    img.alt = '';
-    img.onerror = () => {
-      img.remove();
-      avatar.textContent = participant.name?.charAt(0)?.toUpperCase() || '?';
-    };
-    avatar.appendChild(img);
-  } else {
-    avatar.textContent = participant.name?.charAt(0)?.toUpperCase() || '?';
-  }
+  // 기본 Gravatar 아바타
+  const defaultAvatar = 'https://www.gravatar.com/avatar/?d=mp&s=32';
+  const avatarUrl = participant.avatarUrl || defaultAvatar;
+
+  const img = document.createElement('img');
+  img.src = avatarUrl;
+  img.alt = '';
+  img.onerror = () => {
+    img.src = defaultAvatar;
+  };
+  avatar.appendChild(img);
 
   // 타이핑 중 표시 (현재 편집 중인 줄이 있으면)
   if (participant.lineIndex >= 0 || participant.isTyping) {
@@ -597,6 +628,60 @@ function createParticipantAvatar(participant, isMe) {
   }
 
   return avatar;
+}
+
+// 참여자 내보내기 확인
+function showKickConfirm(userId, userName) {
+  // 기존 다이얼로그 제거
+  const existing = document.querySelector('.kick-confirm-dialog');
+  if (existing) existing.remove();
+
+  const dialog = document.createElement('div');
+  dialog.className = 'kick-confirm-dialog';
+  dialog.innerHTML = `
+    <div class="kick-confirm-content">
+      <p><strong>${userName}</strong>님을 내보내시겠습니까?</p>
+      <div class="kick-confirm-actions">
+        <button class="kick-cancel">취소</button>
+        <button class="kick-confirm">내보내기</button>
+      </div>
+    </div>
+  `;
+
+  // 취소 버튼
+  dialog.querySelector('.kick-cancel').addEventListener('click', () => {
+    dialog.remove();
+  });
+
+  // 내보내기 버튼
+  dialog.querySelector('.kick-confirm').addEventListener('click', async () => {
+    dialog.remove();
+    await kickParticipant(userId, userName);
+  });
+
+  // 바깥 클릭 시 닫기
+  dialog.addEventListener('click', (e) => {
+    if (e.target === dialog) dialog.remove();
+  });
+
+  document.body.appendChild(dialog);
+}
+
+// 참여자 내보내기
+async function kickParticipant(userId, userName) {
+  if (!collabState.sessionId) return;
+
+  try {
+    const result = await window.api.collabKick(collabState.sessionId, userId);
+    if (result.success) {
+      showCollabNotification(`${userName}님을 내보냈습니다`);
+    } else {
+      showCollabNotification('내보내기 실패');
+    }
+  } catch (e) {
+    console.error('[Collab] Kick error:', e);
+    showCollabNotification('내보내기 실패');
+  }
 }
 
 function showCollabNotification(message) {
@@ -667,6 +752,12 @@ function setupCollabEventListeners() {
     handleParticipantLeave(data.userId, data.userName);
   });
 
+  window.api.onCollabKicked(() => {
+    // 강퇴당함 - 협업 세션 종료
+    showCollabNotification('방장이 나를 내보냈습니다');
+    stopCollaboration();
+  });
+
   elements.editor.addEventListener('input', handleEditorInput);
   document.addEventListener('selectionchange', handleSelectionChange);
 }
@@ -677,6 +768,7 @@ function removeCollabEventListeners() {
   window.api.offCollabCursor();
   window.api.offCollabJoin();
   window.api.offCollabLeave();
+  window.api.offCollabKicked();
 
   elements.editor.removeEventListener('input', handleEditorInput);
   document.removeEventListener('selectionchange', handleSelectionChange);
@@ -742,3 +834,16 @@ export function sendLocalCursor() {
   const lineIndex = getCurrentLineIndex();
   window.api.collabSendCursor({ lineIndex });
 }
+
+// ===== 초기화 =====
+// 앱 시작 시 프로필 표시 (로그인 상태면)
+setTimeout(() => {
+  updateParticipantsList();
+}, 100);
+
+// 전역 모듈로 노출 (sidebar.js에서 참여자 탭 사용)
+window.collabModule = {
+  collabState,
+  kickParticipant,
+  updateParticipantsList
+};
