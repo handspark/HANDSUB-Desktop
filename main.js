@@ -1743,7 +1743,7 @@ ipcMain.handle('set-execute-key', (_, key) => {
 
 // ===== Sync Settings =====
 ipcMain.handle('get-sync-server', () => {
-  return config.syncServerUrl || '';
+  return config.syncServerUrl || 'https://api.handsub.com';
 });
 
 ipcMain.handle('set-sync-server', (_, url) => {
