@@ -3432,19 +3432,18 @@ async function handleMemoReceived(memo) {
   console.log('[WS] Memo received from:', memo.senderEmail);
 
   try {
-    // 1. 로컬 DB에 받은 메모 저장
-    const db = getDb();
+    // 1. 로컬 DB에 받은 메모 저장 (전역 db 사용)
     const uuid = crypto.randomUUID();
     const now = Date.now();
     const content = memo.content;
     // 보낸 사람의 원본 메모 UUID (협업 세션 ID로 사용)
     const sharedMemoId = memo.metadata?.sourceUuid || null;
 
-    // 받은 메모로 저장 (shared_memo_id로 협업 연결)
+    // 받은 메모로 저장 (shared_memo_id로 협업 연결, last_notified_at으로 상단 정렬)
     db.prepare(`
-      INSERT INTO memos (uuid, content, created_at, updated_at, received_from, is_read, shared_memo_id)
-      VALUES (?, ?, ?, ?, ?, 0, ?)
-    `).run(uuid, content, now, now, memo.senderEmail, sharedMemoId);
+      INSERT INTO memos (uuid, content, created_at, updated_at, received_from, is_read, shared_memo_id, last_notified_at)
+      VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+    `).run(uuid, content, now, now, memo.senderEmail, sharedMemoId, now);
 
     // 2. OS 알림 표시
     const notifier = require('node-notifier');
@@ -3483,8 +3482,9 @@ async function handleMemoReceived(memo) {
     // 5. 서버에 수신 확인 전송 (선택적)
     try {
       const auth = getStoredAuth();
+      const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
       if (auth?.accessToken) {
-        await fetch(`${getSyncServer()}/api/v2/memo/receive/${memo.id}`, {
+        await fetch(`${serverUrl}/api/v2/memo/receive/${memo.id}`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${auth.accessToken}`,
@@ -3592,7 +3592,10 @@ ipcMain.handle('auth-is-pro', () => {
 let currentCollabSession = null;
 
 ipcMain.handle('collab-start', async (event, sessionId, memoUuid) => {
+  console.log('[IPC] collab-start - sessionId:', sessionId, 'memoUuid:', memoUuid);
+
   if (!wsConnection || wsConnection.readyState !== 1) {
+    console.log('[IPC] collab-start failed: WebSocket not connected');
     return { success: false, error: 'WebSocket not connected' };
   }
 
@@ -3604,6 +3607,7 @@ ipcMain.handle('collab-start', async (event, sessionId, memoUuid) => {
     memoUuid
   }));
 
+  console.log('[IPC] collab-start success, sent collab-join to server');
   return { success: true, sessionId };
 });
 
@@ -3623,8 +3627,14 @@ ipcMain.handle('collab-stop', async () => {
 
 ipcMain.handle('collab-send-update', async (event, update) => {
   if (!wsConnection || wsConnection.readyState !== 1 || !currentCollabSession) {
+    console.log('[IPC] collab-send-update failed: no connection or session', {
+      wsConnected: wsConnection?.readyState === 1,
+      hasSession: !!currentCollabSession
+    });
     return { success: false };
   }
+
+  console.log('[IPC] collab-send-update - sessionId:', currentCollabSession.sessionId, 'updateType:', update?.type);
 
   wsConnection.send(JSON.stringify({
     type: 'collab-update',

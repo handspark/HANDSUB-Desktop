@@ -233,7 +233,8 @@ export async function startCollaboration(memoUuid, content) {
       return { success: false, error: error.message || 'Failed to create session' };
     }
 
-    const { sessionId, existing } = await response.json();
+    const { sessionId, existing, isOwner } = await response.json();
+    console.log('[Collab] API returned sessionId:', sessionId, 'existing:', existing, 'isOwner:', isOwner);
 
     // WebSocket 세션 참가
     const result = await window.api.collabStart(sessionId, memoUuid);
@@ -320,14 +321,21 @@ function sendLineChanges(changes) {
  * 로컬 변경 감지 및 전송
  */
 function syncLocalChanges() {
-  if (!collabState.isCollaborating || collabState.isApplyingRemote) return;
+  if (!collabState.isCollaborating || collabState.isApplyingRemote) {
+    console.log('[Collab] syncLocalChanges skipped - isCollaborating:', collabState.isCollaborating, 'isApplyingRemote:', collabState.isApplyingRemote);
+    return;
+  }
 
   const newLines = parseEditorToLines();
   const changes = findChangedLines(collabState.lastLines, newLines);
 
+  console.log('[Collab] syncLocalChanges - found', changes.length, 'changes');
+
   if (changes.length > 0) {
     // 현재 편집 중인 줄 업데이트
     collabState.currentLineIndex = getCurrentLineIndex();
+
+    console.log('[Collab] Sending changes:', changes.map(c => ({ type: c.type, index: c.index })));
 
     // 변경사항 전송
     sendLineChanges(changes);
@@ -342,7 +350,12 @@ function syncLocalChanges() {
  * 원격 업데이트 적용
  */
 export function applyRemoteUpdate(data) {
-  if (!collabState.isCollaborating) return;
+  console.log('[Collab] applyRemoteUpdate called:', data?.type, 'isCollaborating:', collabState.isCollaborating);
+
+  if (!collabState.isCollaborating) {
+    console.log('[Collab] applyRemoteUpdate skipped - not collaborating');
+    return;
+  }
 
   try {
     collabState.isApplyingRemote = true;
@@ -356,7 +369,10 @@ export function applyRemoteUpdate(data) {
 
     } else if (data.type === 'line-changes') {
       // 줄 단위 변경 적용
+      console.log('[Collab] Applying line changes:', data.changes?.length, 'changes from user:', data.userId);
       applyLineChanges(data.changes, data.lineIndex, data.userId);
+    } else {
+      console.log('[Collab] Unknown update type:', data.type);
     }
 
     collabState.isApplyingRemote = false;
@@ -622,9 +638,12 @@ function setupCollabEventListeners() {
   window.api.onCollabUpdate((data) => {
     // data = { type: 'collab-update', userId, update: {...} }
     // applyRemoteUpdate expects update.type to be 'full-sync' or 'line-changes'
+    console.log('[Collab] Received collab-update event:', data);
     if (data.update) {
       data.update.userId = data.userId;  // 보낸 사람 ID 전달
       applyRemoteUpdate(data.update);
+    } else {
+      console.log('[Collab] Warning: collab-update has no update field');
     }
   });
 
