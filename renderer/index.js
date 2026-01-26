@@ -40,6 +40,7 @@ import {
   setupCircularDependencies
 } from './events.js';
 import { clearLinkPreviews } from './linkPreview.js';
+import { collabState, stopCollaboration } from './collaboration.js';
 
 const { editor, sidebar, listBtn } = elements;
 
@@ -95,10 +96,39 @@ function cleanupAllResources() {
 
   authManager.cleanup();
 
+  // 협업 세션 종료
+  if (collabState.isCollaborating) {
+    stopCollaboration();
+  }
+
   snippetState.isProcessingSnippet = false;
   snippetState.snippetFormMode = false;
   snippetState.currentSnippetForForm = null;
   snippetState.matchedSnippet = null;
+}
+
+// ===== WebSocket 연결 상태 =====
+
+function initWebSocketStatus() {
+  const statusIndicator = document.getElementById('ws-status');
+
+  window.api.onWsConnected(() => {
+    collabState.isConnected = true;
+    if (statusIndicator) {
+      statusIndicator.className = 'ws-status connected';
+      statusIndicator.title = '실시간 연결됨';
+    }
+    console.log('[WS] Connected to server');
+  });
+
+  window.api.onWsDisconnected(() => {
+    collabState.isConnected = false;
+    if (statusIndicator) {
+      statusIndicator.className = 'ws-status disconnected';
+      statusIndicator.title = '오프라인 - 재연결 시도 중...';
+    }
+    console.log('[WS] Disconnected from server');
+  });
 }
 
 // ===== visibilitychange 처리 =====
@@ -153,6 +183,9 @@ function initAllEvents() {
 
   // 빠른 전달
   initQuickShareEvents();
+
+  // WebSocket 연결 상태
+  initWebSocketStatus();
 
   // 창 닫힘
   window.addEventListener('beforeunload', cleanupAllResources);

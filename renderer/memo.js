@@ -34,15 +34,23 @@ export function updateStatusbar(time) {
 
   const timeText = `${year}.${month}.${day} ${ampm}${hour12}:${minutes}`;
 
+  // XSS 방지 - DOM API 사용
+  statusbar.textContent = '';
+
+  // WebSocket 연결 상태 표시
+  const wsStatus = document.createElement('span');
+  wsStatus.id = 'ws-status';
+  wsStatus.className = 'ws-status disconnected';
+  wsStatus.title = '연결 상태 확인 중...';
+  statusbar.appendChild(wsStatus);
+
+  const timeSpan = document.createElement('span');
+  timeSpan.className = 'statusbar-time';
+  timeSpan.textContent = timeText;
+  statusbar.appendChild(timeSpan);
+
   // 프로필 아이콘 (라이센스 연동 시)
   if (window.userProfile) {
-    // XSS 방지 - DOM API 사용
-    statusbar.textContent = '';
-
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'statusbar-time';
-    timeSpan.textContent = timeText;
-
     const profileBtn = document.createElement('button');
     profileBtn.className = 'statusbar-profile';
     profileBtn.title = '메모 전달';
@@ -70,10 +78,7 @@ export function updateStatusbar(time) {
       }
     });
 
-    statusbar.appendChild(timeSpan);
     statusbar.appendChild(profileBtn);
-  } else {
-    statusbar.textContent = timeText;
   }
 }
 

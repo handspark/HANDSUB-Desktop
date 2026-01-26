@@ -1,6 +1,6 @@
 {
   "name": "handsub",
-  "version": "1.2.1",
+  "version": "1.2.8",
   "description": "미니멀 메모장",
   "main": "main.js",
   "scripts": {
@@ -54,6 +54,7 @@
     "better-sqlite3": "^12.5.0",
     "electron-updater": "^6.7.3",
     "node-notifier": "^10.0.1",
-    "ws": "^8.19.0"
+    "ws": "^8.19.0",
+    "yjs": "^13.6.0"
   }
 }

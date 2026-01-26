@@ -3313,9 +3313,34 @@ function connectWebSocket() {
         const message = JSON.parse(data.toString());
         console.log('[WS] Message received:', message.type);
 
-        // 티어 업데이트 처리
-        if (message.type === 'tier-updated') {
-          handleTierUpdate(message);
+        switch (message.type) {
+          case 'tier-updated':
+            handleTierUpdate(message);
+            break;
+          case 'memo-received':
+            handleMemoReceived(message.memo);
+            break;
+          case 'collab-update':
+            handleCollabUpdate(message);
+            break;
+          case 'collab-cursor':
+            handleCollabCursor(message);
+            break;
+          case 'collab-join':
+            handleCollabJoin(message);
+            break;
+          case 'collab-leave':
+            handleCollabLeave(message);
+            break;
+          case 'connected':
+            console.log('[WS] Connected to server');
+            // 연결 성공 시 렌더러에 알림
+            BrowserWindow.getAllWindows().forEach(w => {
+              if (!w.isDestroyed()) {
+                w.webContents.send('ws-connected');
+              }
+            });
+            break;
         }
       } catch (e) {
         console.error('[WS] Message parse error:', e);
@@ -3325,6 +3350,17 @@ function connectWebSocket() {
     wsConnection.on('close', () => {
       console.log('[WS] Disconnected');
       wsConnection = null;
+
+      // 렌더러에 연결 해제 알림
+      BrowserWindow.getAllWindows().forEach(w => {
+        if (!w.isDestroyed()) {
+          w.webContents.send('ws-disconnected');
+        }
+      });
+
+      // 협업 세션 종료
+      currentCollabSession = null;
+
       // 재연결 시도
       scheduleReconnect();
     });
@@ -3360,6 +3396,115 @@ function disconnectWebSocket() {
     wsConnection.close();
     wsConnection = null;
   }
+}
+
+// ===== 실시간 메모 수신 처리 =====
+async function handleMemoReceived(memo) {
+  console.log('[WS] Memo received from:', memo.senderEmail);
+
+  try {
+    // 1. 로컬 DB에 받은 메모 저장
+    const db = getDb();
+    const uuid = crypto.randomUUID();
+    const now = Date.now();
+    const content = memo.content;
+
+    // 받은 메모로 저장 (received_from 필드로 구분)
+    db.prepare(`
+      INSERT INTO memos (uuid, content, created_at, updated_at, received_from, is_read)
+      VALUES (?, ?, ?, ?, ?, 0)
+    `).run(uuid, content, now, now, memo.senderEmail);
+
+    // 2. OS 알림 표시
+    const notifier = require('node-notifier');
+    const firstLine = content.split('\n')[0].substring(0, 50) || '새 메모';
+    notifier.notify({
+      title: `${memo.senderName || memo.senderEmail}님의 메모`,
+      message: firstLine,
+      sound: true,
+      wait: false
+    });
+
+    // 3. 렌더러에 이벤트 전송
+    BrowserWindow.getAllWindows().forEach(w => {
+      if (!w.isDestroyed()) {
+        w.webContents.send('received-memo', {
+          uuid,
+          content,
+          senderEmail: memo.senderEmail,
+          senderName: memo.senderName,
+          senderAvatar: memo.senderAvatar,
+          createdAt: memo.createdAt
+        });
+        w.webContents.send('memos-updated');
+      }
+    });
+
+    // 4. 읽지 않은 메모 수 업데이트
+    const unreadCount = db.prepare('SELECT COUNT(*) as count FROM memos WHERE is_read = 0').get().count;
+    BrowserWindow.getAllWindows().forEach(w => {
+      if (!w.isDestroyed()) {
+        w.webContents.send('unread-count-changed', unreadCount);
+      }
+    });
+
+    // 5. 서버에 수신 확인 전송 (선택적)
+    try {
+      const auth = getStoredAuth();
+      if (auth?.accessToken) {
+        await fetch(`${getSyncServer()}/api/v2/memo/receive/${memo.id}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${auth.accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+    } catch (e) {
+      console.log('[WS] Failed to confirm memo receipt:', e.message);
+    }
+
+    console.log('[WS] Memo saved and notified');
+  } catch (e) {
+    console.error('[WS] Failed to handle received memo:', e);
+  }
+}
+
+// ===== 협업 WebSocket 핸들러 (Phase 2용 스텁) =====
+function handleCollabUpdate(message) {
+  // 협업 업데이트를 렌더러로 전달
+  BrowserWindow.getAllWindows().forEach(w => {
+    if (!w.isDestroyed()) {
+      w.webContents.send('collab-update', message);
+    }
+  });
+}
+
+function handleCollabCursor(message) {
+  // 커서 업데이트를 렌더러로 전달
+  BrowserWindow.getAllWindows().forEach(w => {
+    if (!w.isDestroyed()) {
+      w.webContents.send('collab-cursor', message);
+    }
+  });
+}
+
+function handleCollabJoin(message) {
+  // 참여자 입장 알림을 렌더러로 전달
+  BrowserWindow.getAllWindows().forEach(w => {
+    if (!w.isDestroyed()) {
+      w.webContents.send('collab-join', message);
+    }
+  });
+}
+
+function handleCollabLeave(message) {
+  // 참여자 퇴장 알림을 렌더러로 전달
+  BrowserWindow.getAllWindows().forEach(w => {
+    if (!w.isDestroyed()) {
+      w.webContents.send('collab-leave', message);
+    }
+  });
 }
 
 // 티어 업데이트 처리 (구매 완료 시 실시간 반영)
@@ -3399,6 +3544,67 @@ ipcMain.handle('auth-get-token', () => {
 ipcMain.handle('auth-is-pro', () => {
   const user = getStoredUser();
   return user?.tier === 'pro' || user?.tier === 'lifetime';
+});
+
+// ===== 협업 IPC 핸들러 =====
+let currentCollabSession = null;
+
+ipcMain.handle('collab-start', async (event, sessionId, memoUuid) => {
+  if (!wsConnection || wsConnection.readyState !== 1) {
+    return { success: false, error: 'WebSocket not connected' };
+  }
+
+  currentCollabSession = { sessionId, memoUuid };
+
+  wsConnection.send(JSON.stringify({
+    type: 'collab-join',
+    sessionId,
+    memoUuid
+  }));
+
+  return { success: true, sessionId };
+});
+
+ipcMain.handle('collab-stop', async () => {
+  if (!currentCollabSession) return { success: true };
+
+  if (wsConnection && wsConnection.readyState === 1) {
+    wsConnection.send(JSON.stringify({
+      type: 'collab-leave',
+      sessionId: currentCollabSession.sessionId
+    }));
+  }
+
+  currentCollabSession = null;
+  return { success: true };
+});
+
+ipcMain.handle('collab-send-update', async (event, update) => {
+  if (!wsConnection || wsConnection.readyState !== 1 || !currentCollabSession) {
+    return { success: false };
+  }
+
+  wsConnection.send(JSON.stringify({
+    type: 'collab-update',
+    sessionId: currentCollabSession.sessionId,
+    update
+  }));
+
+  return { success: true };
+});
+
+ipcMain.handle('collab-send-cursor', async (event, cursor) => {
+  if (!wsConnection || wsConnection.readyState !== 1 || !currentCollabSession) {
+    return { success: false };
+  }
+
+  wsConnection.send(JSON.stringify({
+    type: 'collab-cursor',
+    sessionId: currentCollabSession.sessionId,
+    cursor
+  }));
+
+  return { success: true };
 });
 
 // New memo

@@ -1359,3 +1359,276 @@ html, body {
   border-color: var(--memo-date-color);
   color: var(--memo-title-color);
 }
+
+/* ===== Collaboration - WebSocket Status ===== */
+.ws-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 6px;
+  transition: background-color 0.3s ease;
+}
+
+.ws-status.connected {
+  background-color: #34C759;
+  box-shadow: 0 0 4px rgba(52, 199, 89, 0.5);
+}
+
+.ws-status.disconnected {
+  background-color: #8E8E93;
+}
+
+.ws-status.connecting {
+  background-color: #FF9500;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ===== Collaboration - Remote Cursors ===== */
+.remote-cursor {
+  position: fixed;
+  width: 2px;
+  pointer-events: none;
+  z-index: 1000;
+  animation: cursor-blink 1s infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.remote-cursor-label {
+  position: absolute;
+  top: -20px;
+  left: 0;
+  padding: 2px 6px;
+  font-size: 10px;
+  color: white;
+  border-radius: 3px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+/* ===== Collaboration - Participants ===== */
+#collab-participants {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-left: 8px;
+}
+
+.collab-participant {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--hover-bg);
+  border: 2px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--memo-title-color);
+  cursor: default;
+}
+
+.collab-participant:hover {
+  transform: scale(1.1);
+}
+
+/* ===== Collaboration - Notifications ===== */
+.collab-notification {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--sidebar-bg);
+  border: 1px solid var(--status-color);
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--memo-title-color);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 3000;
+  animation: slideUp 0.3s ease;
+}
+
+.collab-notification.fade-out {
+  animation: fadeOut 0.3s ease forwards;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes fadeOut {
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+}
+
+/* ===== Collaboration - Status Bar Integration ===== */
+.collab-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: rgba(52, 199, 89, 0.15);
+  border-radius: 4px;
+  font-size: 10px;
+  color: #34C759;
+}
+
+.collab-indicator.editing {
+  animation: typing-pulse 1s infinite;
+}
+
+@keyframes typing-pulse {
+  0%, 100% { background: rgba(52, 199, 89, 0.15); }
+  50% { background: rgba(52, 199, 89, 0.25); }
+}
+
+/* ===== Collaboration - Start/Stop Button ===== */
+.collab-btn {
+  background: transparent;
+  border: 1px solid var(--status-color);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 10px;
+  color: var(--memo-date-color);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.collab-btn:hover {
+  border-color: var(--memo-date-color);
+  color: var(--memo-title-color);
+}
+
+.collab-btn.active {
+  background: rgba(52, 199, 89, 0.15);
+  border-color: #34C759;
+  color: #34C759;
+}
+
+.collab-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* ===== Collaboration - Invite Dialog ===== */
+.collab-invite-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--sidebar-bg);
+  border: 1px solid var(--status-color);
+  border-radius: 12px;
+  padding: 20px;
+  width: 320px;
+  z-index: 3000;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+}
+
+.collab-invite-dialog.hidden {
+  display: none;
+}
+
+.collab-invite-dialog h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--memo-title-color);
+  margin-bottom: 12px;
+}
+
+.collab-invite-dialog input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--status-color);
+  border-radius: 6px;
+  background: var(--hover-bg);
+  color: var(--memo-title-color);
+  font-size: 13px;
+  outline: none;
+  margin-bottom: 12px;
+}
+
+.collab-invite-dialog input:focus {
+  border-color: var(--accent);
+}
+
+.collab-invite-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ===== Collaboration - Session List ===== */
+.collab-sessions {
+  padding: 8px;
+}
+
+.collab-session-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 4px;
+}
+
+.collab-session-item:hover {
+  background: var(--hover-bg);
+}
+
+.collab-session-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.collab-session-title {
+  font-size: 12px;
+  color: var(--memo-title-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.collab-session-meta {
+  font-size: 10px;
+  color: var(--memo-date-color);
+}
+
+.collab-session-participants {
+  display: flex;
+  margin-left: auto;
+}
+
+.collab-session-participants .collab-participant {
+  width: 20px;
+  height: 20px;
+  font-size: 8px;
+  margin-left: -6px;
+}
+
+.collab-session-participants .collab-participant:first-child {
+  margin-left: 0;
+}

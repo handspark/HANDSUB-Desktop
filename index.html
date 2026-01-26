@@ -142,6 +142,31 @@
     </div>
   </div>
 
+  <!-- 협업 참여자 목록 (상태바에 표시) -->
+  <div id="collab-participants"></div>
+
+  <!-- 협업 초대 다이얼로그 -->
+  <div id="collab-invite-dialog" class="collab-invite-dialog hidden">
+    <h3>협업 초대</h3>
+    <input type="email" id="collab-invite-email" placeholder="초대할 이메일 주소...">
+    <div class="collab-invite-actions">
+      <button id="collab-invite-cancel" class="collab-btn">취소</button>
+      <button id="collab-invite-send" class="share-send-btn">초대</button>
+    </div>
+  </div>
+
+  <!-- 협업 세션 종료 확인 다이얼로그 -->
+  <div id="collab-end-dialog" class="collab-invite-dialog hidden">
+    <h3>협업 종료</h3>
+    <p style="font-size: 12px; color: var(--memo-date-color); margin-bottom: 16px;">
+      협업을 종료하면 다른 참여자들도 세션에서 나가게 됩니다.
+    </p>
+    <div class="collab-invite-actions">
+      <button id="collab-end-cancel" class="collab-btn">취소</button>
+      <button id="collab-end-confirm" class="share-send-btn" style="background: #FF3B30; border-color: #FF3B30;">종료</button>
+    </div>
+  </div>
+
   <script type="module" src="renderer/index.js"></script>
 </body>
 </html>

@@ -38,6 +38,14 @@ const authErrorListener = createSafeListener('auth-error');
 const authLogoutListener = createSafeListener('auth-logout');
 const tierUpdatedListener = createSafeListener('tier-updated');
 
+// 협업 관련 리스너
+const wsConnectedListener = createSafeListener('ws-connected');
+const wsDisconnectedListener = createSafeListener('ws-disconnected');
+const collabUpdateListener = createSafeListener('collab-update');
+const collabCursorListener = createSafeListener('collab-cursor');
+const collabJoinListener = createSafeListener('collab-join');
+const collabLeaveListener = createSafeListener('collab-leave');
+
 // API for renderer (all DB operations go through main process)
 contextBridge.exposeInMainWorld('api', {
   // ===== Memo CRUD (async via IPC) =====
@@ -182,5 +190,27 @@ contextBridge.exposeInMainWorld('api', {
 
   // ===== Tier Update (WebSocket) =====
   onTierUpdated: (callback) => tierUpdatedListener.on(callback),
-  offTierUpdated: () => tierUpdatedListener.off()
+  offTierUpdated: () => tierUpdatedListener.off(),
+
+  // ===== WebSocket 연결 상태 =====
+  onWsConnected: (callback) => wsConnectedListener.on(callback),
+  offWsConnected: () => wsConnectedListener.off(),
+  onWsDisconnected: (callback) => wsDisconnectedListener.on(callback),
+  offWsDisconnected: () => wsDisconnectedListener.off(),
+
+  // ===== 협업 (Collaboration) =====
+  onCollabUpdate: (callback) => collabUpdateListener.on(callback),
+  offCollabUpdate: () => collabUpdateListener.off(),
+  onCollabCursor: (callback) => collabCursorListener.on(callback),
+  offCollabCursor: () => collabCursorListener.off(),
+  onCollabJoin: (callback) => collabJoinListener.on(callback),
+  offCollabJoin: () => collabJoinListener.off(),
+  onCollabLeave: (callback) => collabLeaveListener.on(callback),
+  offCollabLeave: () => collabLeaveListener.off(),
+
+  // ===== 협업 API =====
+  collabStart: (sessionId, memoUuid) => ipcRenderer.invoke('collab-start', sessionId, memoUuid),
+  collabStop: () => ipcRenderer.invoke('collab-stop'),
+  collabSendUpdate: (update) => ipcRenderer.invoke('collab-send-update', update),
+  collabSendCursor: (cursor) => ipcRenderer.invoke('collab-send-cursor', cursor)
 });
