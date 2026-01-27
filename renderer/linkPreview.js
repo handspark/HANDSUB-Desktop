@@ -7,6 +7,23 @@ import { isValidFileUrl } from './security.js';
 
 const { editor, sidebar, linkPreviewsContainer } = elements;
 
+// CSS 속성 값 이스케이프 (querySelector용)
+function escapeAttrValue(str) {
+  // 백슬래시, 따옴표, 특수문자 이스케이프
+  return str.replace(/[\\"'\[\]]/g, '\\$&');
+}
+
+// data-link-url 속성으로 요소 찾기 (안전한 방식)
+function findPreviewByUrl(url) {
+  const previews = linkPreviewsContainer.querySelectorAll('.link-preview');
+  for (const preview of previews) {
+    if (preview.getAttribute('data-link-url') === url) {
+      return preview;
+    }
+  }
+  return null;
+}
+
 // URL 정규식 (최소 도메인.확장자 형태)
 const urlRegex = /(https?:\/\/[a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}[^\s<]*)/g;
 
@@ -47,7 +64,7 @@ export function processLinksInEditor() {
     // 삭제된 링크의 프리뷰 제거
     for (const url of currentPreviews) {
       if (!uniqueUrls.includes(url)) {
-        const preview = linkPreviewsContainer.querySelector(`[data-link-url="${url}"]`);
+        const preview = findPreviewByUrl(url);
         if (preview) preview.remove();
       }
     }
@@ -66,7 +83,7 @@ export function processLinksInEditor() {
 async function createLinkPreview(url) {
   try {
     // 이미 프리뷰가 있으면 스킵
-    if (linkPreviewsContainer.querySelector(`[data-link-url="${url}"]`)) {
+    if (findPreviewByUrl(url)) {
       return;
     }
 
