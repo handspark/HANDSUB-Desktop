@@ -850,9 +850,162 @@ setTimeout(() => {
   updateParticipantsList();
 }, 100);
 
+// ===== 초대 알림 및 목록 =====
+
+// 초대 목록 상태
+export const inviteState = {
+  invites: [],
+  isLoading: false
+};
+
+/**
+ * 받은 초대 목록 조회
+ */
+export async function loadInvites() {
+  inviteState.isLoading = true;
+  try {
+    const result = await window.api.collabGetInvites();
+    if (result.success) {
+      inviteState.invites = result.invites || [];
+      renderInviteBanner();
+    }
+  } catch (e) {
+    console.error('[Collab] Failed to load invites:', e);
+  }
+  inviteState.isLoading = false;
+}
+
+/**
+ * 초대 수락
+ */
+export async function acceptInvite(inviteId) {
+  try {
+    const result = await window.api.collabRespondInvite(inviteId, true);
+    if (result.success) {
+      // 초대 목록에서 제거
+      inviteState.invites = inviteState.invites.filter(i => i.id !== inviteId);
+      renderInviteBanner();
+      showCollabNotification('초대를 수락했습니다');
+
+      // 세션 참가
+      if (result.sessionId) {
+        // TODO: 해당 세션의 메모를 열고 협업 시작
+        console.log('[Collab] Joined session:', result.sessionId);
+      }
+    } else {
+      showCollabNotification(result.error || '수락 실패');
+    }
+  } catch (e) {
+    console.error('[Collab] Accept invite error:', e);
+    showCollabNotification('수락 실패');
+  }
+}
+
+/**
+ * 초대 거절
+ */
+export async function declineInvite(inviteId) {
+  try {
+    const result = await window.api.collabRespondInvite(inviteId, false);
+    if (result.success) {
+      inviteState.invites = inviteState.invites.filter(i => i.id !== inviteId);
+      renderInviteBanner();
+      showCollabNotification('초대를 거절했습니다');
+    } else {
+      showCollabNotification(result.error || '거절 실패');
+    }
+  } catch (e) {
+    console.error('[Collab] Decline invite error:', e);
+    showCollabNotification('거절 실패');
+  }
+}
+
+/**
+ * 초대 배너 렌더링
+ */
+function renderInviteBanner() {
+  // 기존 배너 제거
+  const existing = document.getElementById('collab-invite-banner');
+  if (existing) existing.remove();
+
+  const pendingInvites = inviteState.invites.filter(i => i.status === 'pending');
+  if (pendingInvites.length === 0) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'collab-invite-banner';
+  banner.className = 'collab-invite-banner';
+
+  pendingInvites.forEach(invite => {
+    const item = document.createElement('div');
+    item.className = 'invite-item';
+    // API 응답: invite.inviter = { email, name }, invite.title
+    const inviterName = invite.inviter?.name || invite.inviter?.email || invite.inviterName || invite.inviterEmail || '알 수 없음';
+    const sessionTitle = invite.title || invite.sessionTitle || '';
+    item.innerHTML = `
+      <div class="invite-info">
+        <strong>${inviterName}</strong>님이 협업에 초대했습니다
+        ${sessionTitle ? `<span class="invite-title">${sessionTitle}</span>` : ''}
+      </div>
+      <div class="invite-actions">
+        <button class="invite-decline" data-id="${invite.id}">거절</button>
+        <button class="invite-accept" data-id="${invite.id}">수락</button>
+      </div>
+    `;
+    banner.appendChild(item);
+  });
+
+  // 이벤트 바인딩
+  banner.querySelectorAll('.invite-accept').forEach(btn => {
+    btn.addEventListener('click', () => acceptInvite(btn.dataset.id));
+  });
+  banner.querySelectorAll('.invite-decline').forEach(btn => {
+    btn.addEventListener('click', () => declineInvite(btn.dataset.id));
+  });
+
+  // 사이드바 상단에 삽입
+  const sidebar = document.getElementById('sidebar');
+  if (sidebar) {
+    sidebar.insertBefore(banner, sidebar.firstChild);
+  }
+}
+
+/**
+ * 실시간 초대 알림 처리
+ */
+function handleInviteNotification(data) {
+  console.log('[Collab] Invite notification:', data);
+
+  // 초대 목록에 추가
+  inviteState.invites.push({
+    id: data.inviteId || Date.now().toString(),
+    sessionId: data.sessionId,
+    inviterEmail: data.inviterEmail,
+    inviterName: data.inviterName,
+    sessionTitle: data.sessionTitle || '',
+    status: 'pending'
+  });
+
+  renderInviteBanner();
+}
+
+// 초대 알림 리스너 등록
+window.api.onCollabInvite(handleInviteNotification);
+
+// 앱 시작 시 초대 목록 로드 (로그인된 경우)
+setTimeout(async () => {
+  const user = await window.api.authGetUser?.();
+  if (user) {
+    loadInvites();
+  }
+}, 500);
+
 // 전역 모듈로 노출 (sidebar.js에서 참여자 탭 사용)
 window.collabModule = {
   collabState,
   kickParticipant,
-  updateParticipantsList
+  updateParticipantsList,
+  loadInvites,
+  acceptInvite,
+  declineInvite,
+  inviteState
 };

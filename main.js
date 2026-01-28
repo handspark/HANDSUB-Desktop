@@ -3850,6 +3850,25 @@ function handleCollabInviteNotify(message) {
       w.webContents.send('collab-invite', message);
     }
   });
+
+  // 시스템 알림 표시
+  const { Notification } = require('electron');
+  if (Notification.isSupported()) {
+    const notification = new Notification({
+      title: '협업 초대',
+      body: `${message.inviterName || message.inviterEmail}님이 협업에 초대했습니다`,
+      silent: false
+    });
+    notification.on('click', () => {
+      // 알림 클릭 시 앱 창 표시
+      const mainWin = BrowserWindow.getAllWindows().find(w => !w.isDestroyed());
+      if (mainWin) {
+        mainWin.show();
+        mainWin.focus();
+      }
+    });
+    notification.show();
+  }
 }
 
 // 티어 업데이트 처리 (구매 완료 시 실시간 반영)
@@ -3975,6 +3994,63 @@ ipcMain.handle('collab-kick', async (event, sessionId, targetUserId) => {
   }));
 
   return { success: true };
+});
+
+// 받은 초대 목록 조회
+ipcMain.handle('collab-get-invites', async () => {
+  const auth = getStoredAuth();
+  if (!auth?.accessToken) {
+    return { success: false, error: 'Not logged in', invites: [] };
+  }
+
+  try {
+    const response = await fetch(`${SYNC_SERVER_URL}/api/v2/collab/invites`, {
+      headers: {
+        'Authorization': `Bearer ${auth.accessToken}`
+      }
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      return { success: false, error: err.error || 'Failed to get invites', invites: [] };
+    }
+
+    const data = await response.json();
+    return { success: true, invites: data.invites || [] };
+  } catch (e) {
+    console.error('[IPC] collab-get-invites error:', e);
+    return { success: false, error: e.message, invites: [] };
+  }
+});
+
+// 초대 수락/거절
+ipcMain.handle('collab-respond-invite', async (event, inviteId, accept) => {
+  const auth = getStoredAuth();
+  if (!auth?.accessToken) {
+    return { success: false, error: 'Not logged in' };
+  }
+
+  try {
+    const response = await fetch(`${SYNC_SERVER_URL}/api/v2/collab/invite/${inviteId}/respond`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${auth.accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ accept })
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      return { success: false, error: err.error || 'Failed to respond' };
+    }
+
+    const data = await response.json();
+    return { success: true, sessionId: data.sessionId };
+  } catch (e) {
+    console.error('[IPC] collab-respond-invite error:', e);
+    return { success: false, error: e.message };
+  }
 });
 
 // New memo

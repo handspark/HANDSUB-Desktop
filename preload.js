@@ -233,5 +233,7 @@ contextBridge.exposeInMainWorld('api', {
   collabStop: () => ipcRenderer.invoke('collab-stop'),
   collabSendUpdate: (update) => ipcRenderer.invoke('collab-send-update', update),
   collabSendCursor: (cursor) => ipcRenderer.invoke('collab-send-cursor', cursor),
-  collabKick: (sessionId, targetUserId) => ipcRenderer.invoke('collab-kick', sessionId, targetUserId)
+  collabKick: (sessionId, targetUserId) => ipcRenderer.invoke('collab-kick', sessionId, targetUserId),
+  collabGetInvites: () => ipcRenderer.invoke('collab-get-invites'),
+  collabRespondInvite: (inviteId, accept) => ipcRenderer.invoke('collab-respond-invite', inviteId, accept)
 });
