@@ -32,6 +32,7 @@ let editingGroup = null;   // 편집 중인 그룹
 let currentShareTab = 'share';  // 현재 공유 탭
 let currentShareToken = null;  // 현재 생성된 공유 토큰
 let mySharesCache = [];  // 내 공유 목록 캐시
+let membersCache = new Map();  // 멤버 목록 캐시 (memoUuid -> { members, canManage, sessionId })
 
 // loadMemo는 순환 참조 방지를 위해 나중에 설정
 let loadMemoFn = null;
@@ -924,13 +925,31 @@ async function renderMembersTab() {
   const listContainer = document.getElementById('share-members-list');
   if (!listContainer) return;
 
-  listContainer.innerHTML = '<div class="share-members-loading">로딩 중...</div>';
-
   // 메모가 없으면 빈 상태
   if (!sharePopupMemo?.uuid) {
     listContainer.innerHTML = '<div class="share-members-empty">메모를 선택해주세요</div>';
     sharePopupSessionId = null;
     return;
+  }
+
+  const memoUuid = sharePopupMemo.uuid;
+
+  // 캐시된 데이터가 있으면 먼저 표시
+  const cached = membersCache.get(memoUuid);
+  if (cached) {
+    sharePopupSessionId = cached.sessionId;
+    renderMembersList(listContainer, cached.members, cached.canManage);
+  } else {
+    // 캐시가 없을 때만 스켈레톤 UI 표시
+    listContainer.innerHTML = `
+      <div class="share-member-skeleton">
+        <div class="skeleton-avatar"></div>
+        <div class="skeleton-info">
+          <div class="skeleton-name"></div>
+          <div class="skeleton-email"></div>
+        </div>
+      </div>
+    `;
   }
 
   // DB에서 참여자 목록 가져오기
@@ -1026,6 +1045,15 @@ async function renderMembersTab() {
     canManage = true;
   }
 
+  // 캐시 저장
+  membersCache.set(memoUuid, { members, canManage, sessionId: sharePopupSessionId });
+
+  // 렌더링
+  renderMembersList(listContainer, members, canManage);
+}
+
+// 멤버 목록 렌더링 (분리된 함수)
+function renderMembersList(listContainer, members, canManage) {
   // 빈 상태 처리
   if (members.length === 0) {
     listContainer.innerHTML = '<div class="share-members-empty">아직 참여자가 없습니다</div>';

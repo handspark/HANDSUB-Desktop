@@ -1302,6 +1302,51 @@ html, body {
   padding: 16px;
 }
 
+/* 스켈레톤 UI */
+.share-member-skeleton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+}
+
+.skeleton-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--hover-bg);
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+.skeleton-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.skeleton-name {
+  width: 60%;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--hover-bg);
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+.skeleton-email {
+  width: 40%;
+  height: 8px;
+  border-radius: 3px;
+  background: var(--hover-bg);
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+  animation-delay: 0.1s;
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
 .share-member-item {
   display: flex;
   align-items: center;
