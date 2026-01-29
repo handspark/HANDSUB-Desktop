@@ -3,7 +3,7 @@
  */
 
 import { elements, memoState, sidebarState } from './state.js';
-import { getPlainTextFromHtml, setEditorContent } from './editor.js';
+import { getPlainTextFromHtml, setEditorContent, getEditorContent } from './editor.js';
 import { escapeHtml, isValidColor } from './security.js';
 import { isPro } from './auth.js';
 
@@ -1365,9 +1365,12 @@ async function updateShareLink() {
   updateBtn.textContent = '업데이트 중...';
 
   try {
+    // 에디터에서 최신 콘텐츠 가져오기
+    const currentContent = getEditorContent();
+
     const result = await window.api.updateShareLink({
       token: currentShareToken,
-      content: sharePopupMemo.content
+      content: currentContent
     });
 
     if (result.success) {
