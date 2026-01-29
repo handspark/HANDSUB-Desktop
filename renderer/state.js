@@ -70,7 +70,9 @@ export const snippetState = {
   snippetFields: [],
   snippetFieldIndex: 0,
   snippetFieldValues: {},
-  savedEditorNodes: null
+  savedEditorNodes: null,
+  // 메타 변수 ({{top}}, {{all}})
+  meta: { top: '', all: '' }
 };
 
 // ===== 라이센스 =====

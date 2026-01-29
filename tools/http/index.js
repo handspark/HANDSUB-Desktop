@@ -145,6 +145,10 @@ class HttpTool extends BaseTool {
 
       let body = this.processBody(config, context, bodyType);
 
+      // 디버그: 전송되는 body 확인
+      console.log('[HTTP Tool] Body before send (JSON):', JSON.stringify(body));
+      console.log('[HTTP Tool] Context meta:', context.meta);
+
       const resultPath = config.resultPath || '';
 
       return new Promise((resolve) => {
@@ -196,11 +200,56 @@ class HttpTool extends BaseTool {
     return types[bodyType] || 'application/json';
   }
 
+  /**
+   * JSON 문자열 escape (따옴표, 줄바꿈 등 처리)
+   */
+  static escapeForJson(str) {
+    if (typeof str !== 'string') return str;
+    // JSON.stringify로 escape 후 앞뒤 따옴표 제거
+    const escaped = JSON.stringify(str).slice(1, -1);
+    console.log('[HTTP Tool] escapeForJson input length:', str.length, 'output length:', escaped.length);
+    return escaped;
+  }
+
+  /**
+   * 템플릿 변수 치환 (JSON escape 적용)
+   * @override
+   */
+  static replaceVariables(template, variables = {}) {
+    if (!template || typeof template !== 'string') return template;
+
+    let result = template;
+    for (const [key, value] of Object.entries(variables)) {
+      const placeholder = `{{${key}}}`;
+      // JSON body에서 사용되므로 escape 적용
+      result = result.split(placeholder).join(this.escapeForJson(value || ''));
+    }
+    return result;
+  }
+
   static processBody(config, context, bodyType) {
     if (bodyType === 'none') return '';
 
     let body = config.body || '';
-    const { content } = context;
+    const { content, meta } = context || {};
+
+    console.log('[HTTP Tool] processBody input:', { body, meta, content });
+
+    // 메타 변수 치환 ({{top}}, {{all}}) - JSON escape 적용
+    if (body) {
+      if (body.includes('{{top}}')) {
+        const topValue = (meta && meta.top) || '';
+        console.log('[HTTP Tool] Replacing {{top}} with:', topValue);
+        body = body.split('{{top}}').join(this.escapeForJson(topValue));
+      }
+      if (body.includes('{{all}}')) {
+        const allValue = (meta && meta.all) || '';
+        console.log('[HTTP Tool] Replacing {{all}} with:', allValue);
+        body = body.split('{{all}}').join(this.escapeForJson(allValue));
+      }
+    }
+
+    console.log('[HTTP Tool] Body after meta replacement (JSON):', JSON.stringify(body));
 
     if (content) {
       // Prototype Pollution 방지
@@ -213,7 +262,7 @@ class HttpTool extends BaseTool {
         body = this.replaceVariables(body, variables);
 
         if (body.includes('{{content}}') && variables.content) {
-          body = body.split('{{content}}').join(variables.content);
+          body = body.split('{{content}}').join(this.escapeForJson(variables.content));
         }
       } else if (!body) {
         body = JSON.stringify({ text: content });

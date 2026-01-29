@@ -81,7 +81,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // ===== Snippet Operations =====
   getSnippets: () => ipcRenderer.invoke('snippet-getAll'),
-  executeSnippet: (id, content, editorContent) => ipcRenderer.invoke('snippet-execute', id, content, editorContent),
+  executeSnippet: (id, content, editorContent, meta) => ipcRenderer.invoke('snippet-execute', id, content, editorContent, meta),
   getTriggerKey: () => ipcRenderer.invoke('get-trigger-key'),
   getExecuteKey: () => ipcRenderer.invoke('get-execute-key'),
 

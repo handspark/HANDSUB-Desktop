@@ -84,7 +84,60 @@ function showToolLog(result, snippet) {
   }, 3000);
 }
 
+// ===== 메타 변수 계산 ({{top}}, {{all}}) =====
+
+function calculateMetaVariables() {
+  const fullText = getPlainText();
+  const match = editor.querySelector('span.snippet-match');
+
+  if (!match) {
+    return { top: fullText, all: fullText };
+  }
+
+  // 매치 요소 기준으로 위치 계산
+  const matchText = match.textContent;
+
+  // 매치 이전의 모든 텍스트 노드 수집
+  let topText = '';
+  let foundMatch = false;
+
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null, false);
+  let node;
+
+  while ((node = walker.nextNode())) {
+    if (node.parentElement === match || match.contains(node)) {
+      foundMatch = true;
+      continue;
+    }
+    if (!foundMatch) {
+      topText += node.textContent;
+    }
+  }
+
+  // all: 전체에서 단축어 부분 제거
+  const allText = fullText.replace(matchText, '').replace(/\n{3,}/g, '\n\n').trim();
+
+  // 공백 정규화: 연속된 공백을 하나로, 줄 끝 공백 제거
+  const normalizeWhitespace = (text) => {
+    return text
+      .split('\n')
+      .map(line => line.replace(/\s+/g, ' ').trim())
+      .join('\n')
+      .trim();
+  };
+
+  const result = {
+    top: normalizeWhitespace(topText),
+    all: normalizeWhitespace(allText)
+  };
+  console.log('[Snippet] calculateMetaVariables result:', result);
+  return result;
+}
+
 // ===== 필드 추출 =====
+
+// 예약된 메타 변수 (사용자 입력 필드에서 제외)
+const META_VARIABLES = ['top', 'all', 'content'];
 
 function extractFields(body) {
   if (!body) return [];
@@ -92,8 +145,10 @@ function extractFields(body) {
   const fields = [];
   let match;
   while ((match = regex.exec(body)) !== null) {
-    if (!fields.includes(match[1])) {
-      fields.push(match[1]);
+    const fieldName = match[1];
+    // 메타 변수는 제외
+    if (!fields.includes(fieldName) && !META_VARIABLES.includes(fieldName)) {
+      fields.push(fieldName);
     }
   }
   return fields;
@@ -353,6 +408,7 @@ function deleteSnippetForm() {
   snippetState.snippetFields = [];
   snippetState.snippetFieldIndex = 0;
   snippetState.snippetFieldValues = {};
+  snippetState.meta = { top: '', all: '' };
 
   // 힌트 제거
   const hint = editor.querySelector('.snippet-hint');
@@ -493,6 +549,7 @@ function showNextFieldInline(container) {
         } else {
           const snippet = snippetState.currentSnippetForForm;
           const values = getFormValues();
+          const meta = snippetState.meta; // 저장된 메타 변수 사용
 
           deleteSnippetForm();
 
@@ -507,10 +564,10 @@ function showNextFieldInline(container) {
                 if (!cfg) {
                   result = { success: false, error: 'Invalid config' };
                 } else {
-                  result = await window.api.executeManifestTool(cfg.toolId, snippet.shortcut, { ...values, editorContent });
+                  result = await window.api.executeManifestTool(cfg.toolId, snippet.shortcut, { ...values, editorContent, ...meta });
                 }
               } else {
-                result = await window.api.executeSnippet(snippet.id, JSON.stringify(values), editorContent);
+                result = await window.api.executeSnippet(snippet.id, JSON.stringify(values), editorContent, meta);
               }
             } catch (err) {
               result = { success: false, error: err.message };
@@ -672,6 +729,10 @@ export function handleEnterKey(e) {
     if (fields.length > 0) {
       const matchTextBeforeBlur = match.textContent;
 
+      // 폼 열기 전에 메타 변수 계산 (단축어 포함 상태에서)
+      const meta = calculateMetaVariables();
+      snippetState.meta = meta;
+
       snippetState.isComposing = false;
       editor.blur();
 
@@ -698,6 +759,9 @@ export function handleEnterKey(e) {
     } else {
       const content = snippetState.snippetContent.trim();
 
+      // 단축어 삭제 전에 메타 변수 계산
+      const meta = calculateMetaVariables();
+
       deleteMatch().then(async () => {
         let result;
         try {
@@ -709,10 +773,10 @@ export function handleEnterKey(e) {
             if (!cfg) {
               result = { success: false, error: 'Invalid config' };
             } else {
-              result = await window.api.executeManifestTool(cfg.toolId, snippet.shortcut, { content, editorContent });
+              result = await window.api.executeManifestTool(cfg.toolId, snippet.shortcut, { content, editorContent, ...meta });
             }
           } else {
-            result = await window.api.executeSnippet(snippet.id, content, editorContent);
+            result = await window.api.executeSnippet(snippet.id, content, editorContent, meta);
           }
           // 디버그 로그
           console.log('[Snippet] Execute result:', result);

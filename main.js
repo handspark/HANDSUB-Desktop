@@ -1009,7 +1009,9 @@ ipcMain.handle('memo-get-by-uuid', (_, uuid) => {
   return db.prepare('SELECT * FROM memos WHERE uuid = ?').get(uuid);
 });
 
-ipcMain.handle('snippet-execute', async (_, id, content, editorContent) => {
+ipcMain.handle('snippet-execute', async (_, id, content, editorContent, meta) => {
+  console.log('[Main] snippet-execute received meta:', meta);
+
   if (id === undefined || id === null) return { success: false, error: 'Invalid id' };
 
   const snippet = db.prepare('SELECT * FROM snippets WHERE id = ?').get(id);
@@ -1019,8 +1021,8 @@ ipcMain.handle('snippet-execute', async (_, id, content, editorContent) => {
   const config = safeJsonParse(snippet.config);
   if (!config) return { success: false, error: 'Invalid config' };
 
-  // 도구 레지스트리를 통해 실행 (editorContent = 메모장 전체 내용)
-  return toolRegistry.execute(snippet.type, config, { content, editorContent });
+  // 도구 레지스트리를 통해 실행 (editorContent = 메모장 전체 내용, meta = {{top}}, {{all}})
+  return toolRegistry.execute(snippet.type, config, { content, editorContent, meta });
 });
 
 // ===== Image IPC Handlers =====
