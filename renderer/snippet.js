@@ -138,11 +138,22 @@ export function clearMatch() {
     match.parentNode.replaceChild(text, match);
     editor.normalize();
   }
+  // 힌트 제거
+  const hint = editor.querySelector('.snippet-hint');
+  if (hint) {
+    hint.remove();
+  }
   snippetState.matchedSnippet = null;
 }
 
 function deleteMatch() {
   return new Promise((resolve) => {
+    // 힌트 제거
+    const hint = editor.querySelector('.snippet-hint');
+    if (hint) {
+      hint.remove();
+    }
+
     const match = editor.querySelector('span.snippet-match');
     if (!match) {
       snippetState.matchedSnippet = null;
@@ -302,8 +313,34 @@ export function checkSnippetTrigger() {
       r.collapse(false);
       sel.removeAllRanges();
       sel.addRange(r);
+
+      // 힌트 생성
+      createSnippetHint(newMatch);
     }
   });
+}
+
+// ===== 힌트 생성 =====
+
+function createSnippetHint(matchEl) {
+  // 기존 힌트 제거
+  const existingHint = editor.querySelector('.snippet-hint');
+  if (existingHint) {
+    existingHint.remove();
+  }
+
+  const hint = document.createElement('span');
+  hint.className = 'snippet-hint';
+  hint.innerHTML = '<span class="snippet-hint-key"><kbd>ESC</kbd> 취소</span><span class="snippet-hint-key"><kbd>Enter</kbd> 실행</span>';
+
+  // match 요소의 위치 계산
+  const matchRect = matchEl.getBoundingClientRect();
+  const editorRect = editor.getBoundingClientRect();
+
+  hint.style.left = (matchRect.left - editorRect.left + editor.scrollLeft) + 'px';
+  hint.style.top = (matchRect.bottom - editorRect.top + editor.scrollTop + 2) + 'px';
+
+  editor.appendChild(hint);
 }
 
 // ===== 폼 관리 =====
@@ -315,6 +352,12 @@ function deleteSnippetForm() {
   snippetState.snippetFields = [];
   snippetState.snippetFieldIndex = 0;
   snippetState.snippetFieldValues = {};
+
+  // 힌트 제거
+  const hint = editor.querySelector('.snippet-hint');
+  if (hint) {
+    hint.remove();
+  }
 
   const formContainer = editor.querySelector('.snippet-form');
   if (formContainer) {
@@ -505,6 +548,12 @@ function showNextFieldInline(container) {
 }
 
 function expandSnippetForm(fields, snippet) {
+  // 힌트 제거
+  const hint = editor.querySelector('.snippet-hint');
+  if (hint) {
+    hint.remove();
+  }
+
   const match = editor.querySelector('.snippet-match');
   if (!match) return;
 
@@ -688,6 +737,12 @@ export function handleEscKey(e) {
     editor.blur();
 
     setTimeout(() => {
+      // 힌트 제거
+      const hint = editor.querySelector('.snippet-hint');
+      if (hint) {
+        hint.remove();
+      }
+
       const currentMatch = editor.querySelector('span.snippet-match');
       if (currentMatch) {
         if (currentMatch.textContent !== matchText) {

@@ -180,6 +180,48 @@ html, body {
   }
 }
 
+/* Snippet hint (키보드 안내) */
+.snippet-hint {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 10px;
+  color: rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 10;
+}
+
+@media (prefers-color-scheme: dark) {
+  .snippet-hint {
+    color: rgba(255, 255, 255, 0.3);
+  }
+}
+
+.snippet-hint-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.snippet-hint-key kbd {
+  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+  padding: 1px 4px 0px;
+  font-family: inherit;
+  font-size: 9px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .snippet-hint-key kbd {
+    background: transparent;
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+}
+
 /* 순차 입력 - 터미널 스타일 */
 .snippet-label {
   color: #fff;
