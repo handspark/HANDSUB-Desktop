@@ -812,6 +812,35 @@ ipcMain.handle('tools-schema', (_, type) => {
   return toolRegistry.getSchema(type);
 });
 
+// 도구 테스트 실행 (설정 저장 전 테스트용)
+ipcMain.handle('tool-test', async (_, type, config) => {
+  try {
+    // 도구 타입 검증
+    if (!toolRegistry.isValidType(type)) {
+      return { success: false, error: 'Invalid tool type' };
+    }
+
+    // config 검증 (Prototype Pollution 방지)
+    const safeConfig = sanitizeObject(config);
+    if (!safeConfig) {
+      return { success: false, error: 'Invalid config' };
+    }
+
+    // 테스트용 context (빈 값)
+    const testContext = {
+      content: '테스트 메시지',
+      editorContent: '테스트 메모 내용'
+    };
+
+    // 도구 실행
+    const result = await toolRegistry.execute(type, safeConfig, testContext);
+    return result;
+  } catch (e) {
+    console.error('[Tool Test] Error:', e);
+    return { success: false, error: e.message };
+  }
+});
+
 // ===== 도구 연결 (암호화 저장) =====
 function getToolConnectionsPath() {
   const configPath = getConfigPath();

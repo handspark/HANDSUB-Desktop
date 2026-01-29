@@ -594,6 +594,15 @@ function renderDynamicForm(toolId, existingConfig = {}) {
           hint.textContent = field.hint;
           row.appendChild(hint);
         }
+        // Body 필드 다음에 테스트 실행 버튼 추가 (HTTP 도구만)
+        if (field.name === 'body' && toolId === 'http') {
+          const testBtnRow = document.createElement('div');
+          testBtnRow.className = 'tool-test-inline';
+          testBtnRow.innerHTML = `
+            <button type="button" class="tool-test-btn-small" id="toolTestBtnInline">테스트 실행</button>
+          `;
+          row.appendChild(testBtnRow);
+        }
         break;
 
       case 'select':
@@ -649,10 +658,145 @@ function renderDynamicForm(toolId, existingConfig = {}) {
         row.innerHTML = '';
         row.appendChild(checkLabel);
         break;
+
+      case 'result':
+        // 결과 필드: 입력 + 테스트 결과 표시 통합
+        row.className = 'form-row result-field-row';
+        const resultInput = document.createElement('input');
+        resultInput.type = 'text';
+        resultInput.id = `field_${field.name}`;
+        resultInput.placeholder = field.placeholder || '';
+        resultInput.value = defaultValue;
+        row.appendChild(resultInput);
+
+        // 테스트 결과 표시 영역 (같은 row 안에)
+        const resultDisplay = document.createElement('div');
+        resultDisplay.id = 'toolTestResult';
+        resultDisplay.className = 'tool-test-result-inline';
+        resultDisplay.style.display = 'none';
+        row.appendChild(resultDisplay);
+        break;
     }
 
     dynamicFields.appendChild(row);
   });
+
+  // HTTP 도구인 경우 테스트 버튼 이벤트 연결
+  if (toolId === 'http') {
+    setTimeout(() => {
+      const inlineTestBtn = document.getElementById('toolTestBtnInline');
+      if (inlineTestBtn) {
+        inlineTestBtn.addEventListener('click', runToolTest);
+      }
+    }, 10);
+  }
+}
+
+// 도구 테스트 실행
+async function runToolTest() {
+  const testBtn = document.getElementById('toolTestBtnInline');
+  const resultDiv = document.getElementById('toolTestResult');
+
+  const toolId = snippetToolValue.value;
+  const config = getFormValues();
+
+  // URL 필수 검증
+  if (!config.url) {
+    resultDiv.style.display = 'block';
+    resultDiv.className = 'tool-test-result-inline error';
+    resultDiv.innerHTML = `
+      <div class="result-status error">✗ 오류</div>
+      <pre>URL을 입력하세요</pre>
+    `;
+    return;
+  }
+
+  // 버튼 로딩 상태
+  testBtn.disabled = true;
+  testBtn.classList.add('loading');
+  testBtn.textContent = '테스트 중...';
+  resultDiv.style.display = 'none';
+
+  try {
+    const result = await window.settingsApi.testTool(toolId, config);
+
+    resultDiv.style.display = 'block';
+    resultDiv.className = result.success ? 'tool-test-result-inline success' : 'tool-test-result-inline error';
+
+    if (result.success) {
+      const jsonHtml = renderJsonWithPaths(result.data, '');
+      resultDiv.innerHTML = `
+        <div class="result-status success">✓ 성공 (${result.status}) - 클릭하여 선택</div>
+        <pre>${jsonHtml}</pre>
+      `;
+
+      // JSON 키 클릭 이벤트 추가
+      resultDiv.querySelectorAll('.json-key.clickable').forEach(el => {
+        el.addEventListener('click', () => {
+          const path = el.dataset.path;
+          const resultPathInput = document.getElementById('field_resultPath');
+          if (resultPathInput) {
+            resultPathInput.value = path;
+            resultPathInput.focus();
+          }
+        });
+      });
+    } else {
+      resultDiv.innerHTML = `
+        <div class="result-status error">✗ 실패 ${result.status ? `(${result.status})` : ''}</div>
+        <pre>${escapeHtml(result.error || '알 수 없는 오류')}</pre>
+      `;
+    }
+  } catch (e) {
+    resultDiv.style.display = 'block';
+    resultDiv.className = 'tool-test-result-inline error';
+    resultDiv.innerHTML = `
+      <div class="result-status error">✗ 오류</div>
+      <pre>${escapeHtml(e.message)}</pre>
+    `;
+  } finally {
+    testBtn.disabled = false;
+    testBtn.classList.remove('loading');
+    testBtn.textContent = '테스트 실행';
+  }
+}
+
+// JSON을 클릭 가능한 경로로 렌더링
+function renderJsonWithPaths(obj, prefix = '') {
+  if (obj === null) return '<span class="json-null">null</span>';
+  if (obj === undefined) return '<span class="json-undefined">undefined</span>';
+
+  if (typeof obj === 'string') {
+    return `<span class="json-string">"${escapeHtml(obj)}"</span>`;
+  }
+  if (typeof obj === 'number' || typeof obj === 'boolean') {
+    return `<span class="json-${typeof obj}">${obj}</span>`;
+  }
+
+  if (Array.isArray(obj)) {
+    if (obj.length === 0) return '[]';
+    const items = obj.map((item, idx) => {
+      const path = prefix ? `${prefix}[${idx}]` : `[${idx}]`;
+      return `  ${renderJsonWithPaths(item, path)}`;
+    });
+    return `[\n${items.join(',\n')}\n]`;
+  }
+
+  if (typeof obj === 'object') {
+    const keys = Object.keys(obj);
+    if (keys.length === 0) return '{}';
+
+    const items = keys.map(key => {
+      const path = prefix ? `${prefix}.${key}` : key;
+      const value = obj[key];
+      const isLeaf = typeof value !== 'object' || value === null;
+      const keyClass = isLeaf ? 'json-key clickable' : 'json-key';
+      return `  <span class="${keyClass}" data-path="${path}">"${escapeHtml(key)}"</span>: ${renderJsonWithPaths(value, path)}`;
+    });
+    return `{\n${items.join(',\n')}\n}`;
+  }
+
+  return String(obj);
 }
 
 // 조건부 필드 업데이트 (showWhen)
@@ -717,6 +861,7 @@ function getFormValues() {
       case 'text':
       case 'textarea':
       case 'select':
+      case 'result':
         values[field.name] = el.value;
         break;
       case 'keyvalue':

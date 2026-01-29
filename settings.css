@@ -2035,3 +2035,244 @@ input[type="checkbox"]:checked::before {
   color: var(--text-primary);
   border-color: var(--text-secondary);
 }
+
+/* ===== Tool Test UI ===== */
+.tool-test-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.tool-test-btn {
+  width: 100%;
+  padding: 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tool-test-btn:hover {
+  background: var(--hover-bg);
+  border-color: var(--text-secondary);
+}
+
+.tool-test-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tool-test-btn.loading {
+  color: var(--text-muted);
+}
+
+.tool-test-result {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 12px;
+  max-height: 200px;
+  overflow: auto;
+}
+
+.tool-test-result.success {
+  border-color: #34C759;
+  background: rgba(52, 199, 89, 0.1);
+}
+
+.tool-test-result.error {
+  border-color: #FF3B30;
+  background: rgba(255, 59, 48, 0.1);
+}
+
+.tool-test-result pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.tool-test-result .result-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.tool-test-result .result-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.tool-test-result .result-status.success {
+  color: #34C759;
+}
+
+.tool-test-result .result-status.error {
+  color: #FF3B30;
+}
+
+.tool-test-result .json-key {
+  color: #007AFF;
+  cursor: pointer;
+}
+
+.tool-test-result .json-key:hover {
+  text-decoration: underline;
+}
+
+.tool-test-result .json-key.clickable {
+  background: rgba(0, 122, 255, 0.1);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.result-path-hint {
+  margin-top: 8px;
+  padding: 8px;
+  background: rgba(0, 122, 255, 0.1);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.result-path-hint code {
+  background: var(--bg-primary);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+}
+
+/* Quick Update Button */
+.quick-update-btn {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 4px 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.quick-update-btn:hover {
+  color: #007AFF;
+  border-color: #007AFF;
+  background: rgba(0, 122, 255, 0.05);
+}
+
+.quick-update-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
+  color: #34C759;
+  border-color: #34C759;
+  background: rgba(52, 199, 89, 0.1);
+}
+
+/* Inline Test Button (below body field) */
+.tool-test-inline {
+  margin-top: 8px;
+}
+
+.tool-test-btn-small {
+  padding: 5px 14px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tool-test-btn-small:hover {
+  color: #007AFF;
+  border-color: #007AFF;
+  background: rgba(0, 122, 255, 0.05);
+}
+
+.tool-test-btn-small:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tool-test-btn-small.loading {
+  color: var(--text-muted);
+}
+
+/* Result Field (combined input + test result) */
+.result-field-row {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.tool-test-result-inline {
+  margin-top: 8px;
+  padding: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 11px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.tool-test-result-inline.success {
+  border-color: #34C759;
+  background: rgba(52, 199, 89, 0.08);
+}
+
+.tool-test-result-inline.error {
+  border-color: #FF3B30;
+  background: rgba(255, 59, 48, 0.08);
+}
+
+.tool-test-result-inline pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.tool-test-result-inline .result-status {
+  font-size: 11px;
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+
+.tool-test-result-inline .result-status.success {
+  color: #34C759;
+}
+
+.tool-test-result-inline .result-status.error {
+  color: #FF3B30;
+}
+
+.tool-test-result-inline .json-key.clickable {
+  color: #007AFF;
+  cursor: pointer;
+  background: rgba(0, 122, 255, 0.1);
+  padding: 1px 4px;
+  border-radius: 3px;
+  transition: all 0.15s;
+}
+
+.tool-test-result-inline .json-key.clickable:hover {
+  background: rgba(0, 122, 255, 0.2);
+  text-decoration: underline;
+}

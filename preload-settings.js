@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('settingsApi', {
   // Tools API
   getTools: () => ipcRenderer.invoke('tools-list'),
   getToolSchema: (type) => ipcRenderer.invoke('tools-schema', type),
+  testTool: (type, config) => ipcRenderer.invoke('tool-test', type, config),
   getToolConnections: () => ipcRenderer.invoke('tools-get-connections'),
   connectTool: (toolId, credentials) => ipcRenderer.invoke('tools-connect', toolId, credentials),
   disconnectTool: (toolId) => ipcRenderer.invoke('tools-disconnect', toolId),

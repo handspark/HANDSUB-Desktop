@@ -1,6 +1,6 @@
 /**
  * Webhook Tool
- * Slack, Discord 등 웹훅 URL로 메시지 전송
+ * Slack, Discord 등 웹훅 URL로 메시지 전송 (단방향)
  */
 const BaseTool = require('../BaseTool');
 const { validateUrl, safeJsonParse } = require('../security');
@@ -12,7 +12,7 @@ class WebhookTool extends BaseTool {
     return {
       id: 'webhook',
       name: 'Webhook',
-      description: '웹훅 URL로 메시지를 전송합니다',
+      description: '웹훅 URL로 메시지를 전송합니다 (Slack, Discord 등)',
       icon: '🔗',
       category: 'integration',
       version: '1.0.0'

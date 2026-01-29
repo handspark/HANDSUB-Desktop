@@ -4,7 +4,7 @@
  */
 
 import { elements, snippetState } from './state.js';
-import { getPlainText } from './editor.js';
+import { getPlainText, insertTextAtCursor } from './editor.js';
 import { triggerSave } from './memo.js';
 import { escapeHtml, isValidIconPath, isSafeKey, safeJsonParse } from './security.js';
 
@@ -515,6 +515,16 @@ function showNextFieldInline(container) {
             } catch (err) {
               result = { success: false, error: err.message };
             }
+
+            // 디버그 로그
+            console.log('[Snippet] Execute result:', result);
+
+            // 결과 텍스트 삽입 (insertText가 있으면)
+            if (result && result.success && result.insertText) {
+              console.log('[Snippet] Inserting text:', result.insertText);
+              insertTextAtCursor(result.insertText);
+            }
+
             showToolLog(result, snippet);
             triggerSave();
             snippetState.isProcessingSnippet = false;
@@ -549,12 +559,6 @@ function showNextFieldInline(container) {
 }
 
 function expandSnippetForm(fields, snippet) {
-  // 힌트 제거
-  const hint = editor.querySelector('.snippet-hint');
-  if (hint) {
-    hint.remove();
-  }
-
   const match = editor.querySelector('.snippet-match');
   if (!match) return;
 
@@ -588,6 +592,29 @@ function expandSnippetForm(fields, snippet) {
   match.parentNode.replaceChild(formContainer, match);
 
   showNextFieldInline(formContainer);
+
+  // 힌트 위치 업데이트 (폼 아래로)
+  requestAnimationFrame(() => {
+    updateHintPosition(formContainer);
+  });
+}
+
+// 힌트 위치 업데이트
+function updateHintPosition(targetEl) {
+  let hint = editor.querySelector('.snippet-hint');
+  if (!hint) {
+    // 힌트가 없으면 새로 생성
+    hint = document.createElement('span');
+    hint.className = 'snippet-hint';
+    hint.innerHTML = '<span class="snippet-hint-key"><kbd>ESC</kbd> 취소</span><span class="snippet-hint-key"><kbd>Enter</kbd> 실행</span>';
+    editor.appendChild(hint);
+  }
+
+  const targetRect = targetEl.getBoundingClientRect();
+  const editorRect = editor.getBoundingClientRect();
+
+  hint.style.left = (targetRect.left - editorRect.left + editor.scrollLeft) + 'px';
+  hint.style.top = (targetRect.bottom - editorRect.top + editor.scrollTop + 2) + 'px';
 }
 
 // ===== Enter 키 핸들러 =====
@@ -687,6 +714,15 @@ export function handleEnterKey(e) {
           } else {
             result = await window.api.executeSnippet(snippet.id, content, editorContent);
           }
+          // 디버그 로그
+          console.log('[Snippet] Execute result:', result);
+
+          // 결과 텍스트 삽입 (insertText가 있으면)
+          if (result && result.success && result.insertText) {
+            console.log('[Snippet] Inserting text:', result.insertText);
+            insertTextAtCursor(result.insertText);
+          }
+
           triggerSave();
         } catch (execErr) {
           result = { success: false, error: execErr.message };
