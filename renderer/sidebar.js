@@ -1255,8 +1255,32 @@ async function handlePermissionChange(memberId, permission) {
 async function initLinkShareTab() {
   const createSection = document.getElementById('share-link-create');
   const resultSection = document.getElementById('share-link-result');
+  const status = document.getElementById('share-status');
 
-  // 기본 UI 표시
+  // 상태 초기화
+  status.classList.add('hidden');
+  currentShareToken = null;
+
+  // 현재 메모가 이미 공유되었는지 확인
+  if (sharePopupMemo?.uuid) {
+    try {
+      const shares = await window.api.getMyShares();
+      const existingShare = shares.find(s => s.memoUuid === sharePopupMemo.uuid && s.isActive);
+
+      if (existingShare) {
+        // 기존 공유가 있으면 결과 화면 표시
+        currentShareToken = existingShare.token;
+        createSection.classList.add('hidden');
+        resultSection.classList.remove('hidden');
+        document.getElementById('share-link-url').value = existingShare.shareUrl;
+        return;
+      }
+    } catch (e) {
+      console.error('[Sidebar] Failed to check existing share:', e);
+    }
+  }
+
+  // 기존 공유가 없으면 생성 화면 표시
   createSection.classList.remove('hidden');
   resultSection.classList.add('hidden');
 }
