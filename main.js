@@ -3077,6 +3077,25 @@ ipcMain.handle('share-link-create', async (_, { content, memoUuid, expiresIn, pa
   }
 });
 
+// 공유 링크 업데이트 (v2)
+ipcMain.handle('share-link-update', async (_, { token, content }) => {
+  try {
+    if (!isPro()) {
+      return { success: false, error: 'pro_required', message: 'Pro 플랜이 필요합니다' };
+    }
+
+    const response = await authenticatedFetch(`/api/v2/share/${token}`, {
+      method: 'PUT',
+      body: JSON.stringify({ content })
+    });
+
+    return response;
+  } catch (e) {
+    console.error('[Share] Update error:', e);
+    return { success: false, error: e.message || 'Failed to update share link' };
+  }
+});
+
 // 공유 링크 삭제 (v2)
 ipcMain.handle('share-link-delete', async (_, token) => {
   try {

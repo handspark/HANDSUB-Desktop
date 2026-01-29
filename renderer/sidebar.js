@@ -892,6 +892,7 @@ function switchMainTab(tabName) {
 function initShareLinkEvents() {
   const createBtn = document.getElementById('share-link-create-btn');
   const copyBtn = document.getElementById('share-link-copy-btn');
+  const updateBtn = document.getElementById('share-link-update-btn');
   const deleteBtn = document.getElementById('share-link-delete-btn');
   const viewBtn = document.getElementById('share-link-view-btn');
 
@@ -901,6 +902,10 @@ function initShareLinkEvents() {
 
   if (copyBtn) {
     copyBtn.addEventListener('click', copyShareLink);
+  }
+
+  if (updateBtn) {
+    updateBtn.addEventListener('click', updateShareLink);
   }
 
   if (deleteBtn) {
@@ -1323,6 +1328,43 @@ async function copyShareLink() {
   } catch (e) {
     status.className = 'share-status error';
     status.textContent = '복사 실패';
+  }
+}
+
+async function updateShareLink() {
+  if (!currentShareToken || !sharePopupMemo) return;
+
+  const updateBtn = document.getElementById('share-link-update-btn');
+  const status = document.getElementById('share-status');
+
+  updateBtn.disabled = true;
+  updateBtn.textContent = '업데이트 중...';
+
+  try {
+    const result = await window.api.updateShareLink({
+      token: currentShareToken,
+      content: sharePopupMemo.content
+    });
+
+    if (result.success) {
+      status.className = 'share-status success';
+      status.classList.remove('hidden');
+      status.textContent = '공유 링크가 업데이트되었습니다';
+      setTimeout(() => {
+        status.classList.add('hidden');
+      }, 3000);
+    } else {
+      status.className = 'share-status error';
+      status.classList.remove('hidden');
+      status.textContent = result.message || '업데이트 실패';
+    }
+  } catch (e) {
+    status.className = 'share-status error';
+    status.classList.remove('hidden');
+    status.textContent = '업데이트 중 오류 발생';
+  } finally {
+    updateBtn.disabled = false;
+    updateBtn.textContent = '업데이트';
   }
 }
 

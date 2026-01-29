@@ -140,6 +140,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // ===== Share Link API =====
   createShareLink: (data) => ipcRenderer.invoke('share-link-create', data),
+  updateShareLink: (data) => ipcRenderer.invoke('share-link-update', data),
   deleteShareLink: (token) => ipcRenderer.invoke('share-link-delete', token),
   getMyShares: () => ipcRenderer.invoke('share-link-list'),
   copyToClipboard: (text) => ipcRenderer.invoke('clipboard-write', text),

@@ -1254,6 +1254,16 @@ html, body {
   color: var(--memo-title-color);
 }
 
+.publish-action-btn.danger {
+  border-color: #e74c3c;
+  color: #e74c3c;
+}
+
+.publish-action-btn.danger:hover {
+  border-color: #c0392b;
+  color: #c0392b;
+  background: rgba(231, 76, 60, 0.1);
+}
 
 /* ===== Link Share - Result ===== */
 .share-link-result {
