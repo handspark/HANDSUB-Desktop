@@ -23,6 +23,8 @@ export function stripInlineHandlers(html) {
   html = html.replace(/<a[^>]*class="[^"]*link-preview[^"]*"[^>]*>[\s\S]*?<\/a>/gi, '');
   html = html.replace(/<a[^>]*class="[^"]*memo-link[^"]*"[^>]*>[\s\S]*?<\/a>/gi, '');
   html = html.replace(/<div[^>]*class="[^"]*link-preview-wrapper[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '');
+  // 스니펫 힌트 요소 제거 (외부 공유 시 노출 방지)
+  html = html.replace(/<span[^>]*class="[^"]*snippet-hint[^"]*"[^>]*>[\s\S]*?<\/span>/gi, '');
   return html;
 }
 
@@ -95,6 +97,16 @@ export function setEditorContent(html) {
 }
 
 export function getPlainText() {
+  // 스니펫 힌트 요소 제외하고 텍스트 추출 (외부 공유 시 노출 방지)
+  const hint = editor.querySelector('.snippet-hint');
+  if (hint) {
+    // 힌트를 임시로 숨기고 텍스트 추출
+    const originalDisplay = hint.style.display;
+    hint.style.display = 'none';
+    const text = editor.innerText || editor.textContent || '';
+    hint.style.display = originalDisplay;
+    return text;
+  }
   return editor.innerText || editor.textContent || '';
 }
 
