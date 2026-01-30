@@ -1619,3 +1619,31 @@ function selectTool(tool) {
   // 해당 도구 선택 및 폼 생성
   selectToolOption(tool);
 }
+
+// ===== Shortcut Reset =====
+const resetShortcutsBtn = document.getElementById('resetShortcutsBtn');
+
+// 기본값
+const DEFAULT_SHORTCUTS = {
+  shortcut: 'Alt+CommandOrControl+N',       // 열기: ⌥⌘N
+  newMemoShortcut: 'CommandOrControl+N',    // 새 메모: ⌘N
+  triggerKey: '/',
+  executeKey: 'Enter'
+};
+
+resetShortcutsBtn?.addEventListener('click', async () => {
+  const confirmed = await showConfirmModal('단축키 설정을 기본값으로 초기화하시겠습니까?');
+  if (!confirmed) return;
+
+  // 모든 단축키를 기본값으로 복원
+  await window.settingsApi.setShortcut(DEFAULT_SHORTCUTS.shortcut);
+  await window.settingsApi.setNewMemoShortcut(DEFAULT_SHORTCUTS.newMemoShortcut);
+  await window.settingsApi.setTriggerKey(DEFAULT_SHORTCUTS.triggerKey);
+  await window.settingsApi.setExecuteKey(DEFAULT_SHORTCUTS.executeKey);
+
+  // UI 업데이트
+  shortcutInput.value = formatShortcut(DEFAULT_SHORTCUTS.shortcut);
+  newMemoShortcutInput.value = formatShortcut(DEFAULT_SHORTCUTS.newMemoShortcut);
+  triggerKeyInput.value = DEFAULT_SHORTCUTS.triggerKey;
+  executeKeyInput.value = formatExecuteKey(DEFAULT_SHORTCUTS.executeKey);
+});
