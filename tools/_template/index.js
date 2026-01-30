@@ -1,15 +1,28 @@
 /**
- * [도구 이름] Tool
+ * [도구 이름] Tool - 코드 기반 도구 템플릿
  * [도구 설명]
  *
+ * ═══════════════════════════════════════════════════════════
+ * 도구 생성 방법 2가지:
+ * ───────────────────────────────────────────────────────────
+ * 1. 코드 도구 (index.js) - 복잡한 로직, 다단계 처리
+ *    → 이 파일 사용
+ *    → 단축어는 사용자가 직접 생성
+ *
+ * 2. 매니페스트 도구 (manifest.json) - 간단한 HTTP 요청
+ *    → manifest.json 사용
+ *    → commands에 정의한 단축어 자동 등록!
+ * ═══════════════════════════════════════════════════════════
+ *
  * 새 도구 만들기:
- * 1. 이 폴더를 복사하여 새 이름으로 변경 (예: slack, notion, gmail)
- * 2. meta, schema, defaults, validate, execute 수정
- * 3. 앱 재시작하면 자동으로 로드됨
+ * 1. 이 폴더를 복사하여 새 이름으로 변경 (예: gpt, notion, gmail)
+ * 2. index.js 또는 manifest.json 중 하나만 남기기
+ * 3. meta, schema, defaults, validate, execute 수정
+ * 4. 앱 재시작하면 자동으로 로드됨
  *
  * 아이콘 추가:
- * - 폴더에 icon.png 또는 icon.svg 파일 추가 (권장: 64x64px)
- * - 자동으로 인식됨 (icon.png, icon.svg, logo.png, logo.svg)
+ * - 폴더에 icon.png 파일 추가 (권장: 64x64px)
+ * - 자동으로 인식됨
  */
 const BaseTool = require('../BaseTool');
 

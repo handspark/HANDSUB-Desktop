@@ -1,0 +1,33 @@
+{
+  "name": "도구 이름",
+  "icon": "🔧",
+  "description": "도구 설명을 입력하세요",
+
+  "settings": {
+    "url": {
+      "label": "API URL",
+      "type": "text",
+      "placeholder": "https://api.example.com/endpoint",
+      "required": true
+    },
+    "apiKey": {
+      "label": "API Key",
+      "type": "password",
+      "placeholder": "sk-...",
+      "required": false
+    }
+  },
+
+  "commands": [
+    {
+      "shortcut": "예시",
+      "fields": ["내용"],
+      "body": "{\"text\": \"{{내용}}\"}"
+    },
+    {
+      "shortcut": "예시2",
+      "fields": ["제목", "본문"],
+      "body": "{\"title\": \"{{제목}}\", \"content\": \"{{본문}}\"}"
+    }
+  ]
+}
