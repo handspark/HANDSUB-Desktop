@@ -455,6 +455,13 @@ if (!snippetColumns.includes('updated_at')) {
   // 기존 데이터에 현재 시간 설정
   db.exec(`UPDATE snippets SET updated_at = ${Date.now()} WHERE updated_at IS NULL`);
 }
+// 매니페스트 오버라이드 컬럼 추가
+if (!snippetColumns.includes('source')) {
+  db.exec(`ALTER TABLE snippets ADD COLUMN source TEXT DEFAULT 'code'`);
+}
+if (!snippetColumns.includes('manifest_ref')) {
+  db.exec(`ALTER TABLE snippets ADD COLUMN manifest_ref TEXT`);
+}
 
 // ===== Input Validation Helpers =====
 function isValidId(id) {
@@ -758,7 +765,9 @@ ipcMain.handle('snippet-getAll', () => {
   // 도구 폴더의 icon.png 또는 meta.icon 가져오기
   return snippets.map(s => ({
     ...s,
-    icon: s.icon || toolRegistry.getIcon(s.type)
+    icon: s.icon || toolRegistry.getIcon(s.type),
+    source: s.source || 'code',
+    manifestRef: s.manifest_ref || null
   }));
 });
 
@@ -800,6 +809,106 @@ ipcMain.handle('snippet-delete', (_, id) => {
   if (typeof id !== 'string') return false;
   db.prepare('DELETE FROM snippets WHERE id = ?').run(id);
   return true;
+});
+
+// ===== 매니페스트 오버라이드 IPC 핸들러 =====
+
+// 오버라이드 생성/수정
+ipcMain.handle('manifest-override-upsert', (_, { toolId, originalShortcut, newShortcut, fields, body }) => {
+  if (!isSafeKey(toolId)) return { success: false, error: 'Invalid toolId' };
+  if (typeof originalShortcut !== 'string' || originalShortcut.length > 100) {
+    return { success: false, error: 'Invalid originalShortcut' };
+  }
+  if (typeof newShortcut !== 'string' || newShortcut.length > 100) {
+    return { success: false, error: 'Invalid newShortcut' };
+  }
+
+  const manifestRef = `${toolId}:${originalShortcut}`;
+  const config = JSON.stringify({ fields: fields || [], body: body || '' });
+  const now = Date.now();
+
+  try {
+    // 기존 오버라이드 확인
+    const existing = db.prepare('SELECT id FROM snippets WHERE manifest_ref = ? AND source = ?')
+      .get(manifestRef, 'manifest_override');
+
+    if (existing) {
+      // 업데이트
+      db.prepare(`
+        UPDATE snippets
+        SET shortcut = ?, config = ?, updated_at = ?, synced_at = 0
+        WHERE id = ?
+      `).run(newShortcut.toLowerCase(), config, now, existing.id);
+      return { success: true, id: existing.id, updated: true };
+    } else {
+      // 새로 생성
+      const id = crypto.randomUUID();
+      db.prepare(`
+        INSERT INTO snippets (id, type, shortcut, name, config, source, manifest_ref, updated_at, synced_at)
+        VALUES (?, 'manifest', ?, ?, ?, 'manifest_override', ?, ?, 0)
+      `).run(id, newShortcut.toLowerCase(), newShortcut, config, manifestRef, now);
+      return { success: true, id, updated: false };
+    }
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// 오버라이드 삭제 (원본 복원)
+ipcMain.handle('manifest-override-reset', (_, toolId, originalShortcut) => {
+  if (!isSafeKey(toolId)) return { success: false, error: 'Invalid toolId' };
+
+  const manifestRef = `${toolId}:${originalShortcut}`;
+
+  try {
+    db.prepare('DELETE FROM snippets WHERE manifest_ref = ? AND source = ?')
+      .run(manifestRef, 'manifest_override');
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// 특정 오버라이드 조회
+ipcMain.handle('manifest-override-get', (_, toolId, originalShortcut) => {
+  if (!isSafeKey(toolId)) return null;
+
+  const manifestRef = `${toolId}:${originalShortcut}`;
+  const override = db.prepare(`
+    SELECT id, shortcut, config FROM snippets
+    WHERE manifest_ref = ? AND source = ?
+  `).get(manifestRef, 'manifest_override');
+
+  if (!override) return null;
+
+  const config = safeJsonParse(override.config) || {};
+  return {
+    id: override.id,
+    shortcut: override.shortcut,
+    fields: config.fields || [],
+    body: config.body || ''
+  };
+});
+
+// 전체 오버라이드 목록
+ipcMain.handle('manifest-overrides-list', () => {
+  const overrides = db.prepare(`
+    SELECT id, shortcut, config, manifest_ref FROM snippets
+    WHERE source = 'manifest_override'
+  `).all();
+
+  return overrides.map(o => {
+    const config = safeJsonParse(o.config) || {};
+    const [toolId, originalShortcut] = (o.manifest_ref || '').split(':');
+    return {
+      id: o.id,
+      toolId,
+      originalShortcut,
+      shortcut: o.shortcut,
+      fields: config.fields || [],
+      body: config.body || ''
+    };
+  });
 });
 
 // 도구 목록 조회
@@ -2475,9 +2584,9 @@ ipcMain.handle('snippets-sync', async () => {
 
     const lastSync = db.prepare('SELECT MAX(synced_at) as last FROM snippets WHERE synced_at > 0').get().last || 0;
 
-    // 로컬 변경사항 수집
+    // 로컬 변경사항 수집 (source, manifest_ref 포함)
     const localChanges = db.prepare(`
-      SELECT id, type, shortcut, name, config, updated_at as updatedAt
+      SELECT id, type, shortcut, name, config, source, manifest_ref as manifestRef, updated_at as updatedAt
       FROM snippets WHERE (updated_at > synced_at OR synced_at = 0)
     `).all();
 
@@ -2494,9 +2603,20 @@ ipcMain.handle('snippets-sync', async () => {
 
         if (!local || snippet.updatedAt > local.updated_at) {
           db.prepare(`
-            INSERT OR REPLACE INTO snippets (id, type, shortcut, name, config, synced_at, updated_at, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM snippets WHERE id = ?), CURRENT_TIMESTAMP))
-          `).run(snippet.id, snippet.type, snippet.shortcut, snippet.name, snippet.config, response.serverTime, snippet.updatedAt, snippet.id);
+            INSERT OR REPLACE INTO snippets (id, type, shortcut, name, config, source, manifest_ref, synced_at, updated_at, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM snippets WHERE id = ?), CURRENT_TIMESTAMP))
+          `).run(
+            snippet.id,
+            snippet.type,
+            snippet.shortcut,
+            snippet.name,
+            snippet.config,
+            snippet.source || 'code',
+            snippet.manifestRef || null,
+            response.serverTime,
+            snippet.updatedAt,
+            snippet.id
+          );
         }
       }
     }
@@ -3564,6 +3684,15 @@ ipcMain.handle('auth-logout', async (_, options = {}) => {
     // 로컬에서 삭제
     db.prepare('DELETE FROM memos WHERE is_cloud = 1').run();
     console.log('[Auth] Cloud memos deleted from local');
+  }
+
+  // 매니페스트 오버라이드 삭제 (클라우드 동기화 활성화된 Pro 사용자만)
+  // 동기화가 꺼져있으면 삭제 시 복구 불가하므로 유지
+  if (getCloudSyncEnabled() && isPro()) {
+    db.prepare("DELETE FROM snippets WHERE source = 'manifest_override'").run();
+    console.log('[Auth] Manifest overrides deleted (cloud sync enabled)');
+  } else {
+    console.log('[Auth] Manifest overrides kept (cloud sync disabled or not Pro)');
   }
 
   clearStoredAuth();

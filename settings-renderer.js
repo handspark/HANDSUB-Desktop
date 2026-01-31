@@ -1459,6 +1459,9 @@ async function loadAvailableTools() {
   // 로컬 연결 상태 가져오기
   toolConnections = await window.settingsApi.getToolConnections();
 
+  // 오버라이드 상태 로드
+  await loadManifestOverrides();
+
   renderToolsList(tools, manifestTools);
 }
 
@@ -1478,14 +1481,40 @@ function renderToolsList(tools, manifestTools = []) {
       item.className = 'tool-item manifest-tool';
       item.dataset.toolId = tool.id;
 
+      // 명령어 개수 표시
+      const cmdCount = tool.commands.length;
+      const overriddenCount = tool.commands.filter(c => manifestOverrides[`${tool.id}:${c.shortcut}`]).length;
+
       item.innerHTML = `
-        <div class="tool-icon">${tool.icon || '🔧'}</div>
-        <div class="tool-info">
-          <div class="tool-name">${escapeHtml(tool.name)}</div>
-          <div class="tool-desc">${tool.commands.map(c => '/' + c.shortcut).join(', ')}</div>
+        <div class="tool-header" style="display: flex; align-items: center; gap: 12px; width: 100%;">
+          <div class="tool-icon">${tool.icon || '🔧'}</div>
+          <div class="tool-info" style="flex: 1;">
+            <div class="tool-name">${escapeHtml(tool.name)}</div>
+            <div class="tool-desc">${cmdCount}개 명령어${overriddenCount > 0 ? ` (${overriddenCount}개 커스터마이즈됨)` : ''}</div>
+          </div>
+          <span class="tool-expand-indicator">▶</span>
+          <button class="tool-settings-btn" data-tool-id="${tool.id}">설정</button>
         </div>
-        <button class="tool-settings-btn" data-tool-id="${tool.id}">설정</button>
       `;
+
+      // 클릭 시 명령어 목록 토글
+      const header = item.querySelector('.tool-header');
+      header.addEventListener('click', (e) => {
+        if (e.target.classList.contains('tool-settings-btn')) return;
+        e.stopPropagation();
+
+        const isExpanded = item.classList.contains('expanded');
+        if (isExpanded) {
+          // 접기
+          item.classList.remove('expanded');
+          const cmdList = item.querySelector('.manifest-commands-list');
+          if (cmdList) cmdList.remove();
+        } else {
+          // 펼치기
+          item.classList.add('expanded');
+          renderManifestCommands(tool, item);
+        }
+      });
 
       // 설정 버튼 클릭
       item.querySelector('.tool-settings-btn').addEventListener('click', (e) => {
@@ -1647,3 +1676,208 @@ resetShortcutsBtn?.addEventListener('click', async () => {
   triggerKeyInput.value = DEFAULT_SHORTCUTS.triggerKey;
   executeKeyInput.value = formatExecuteKey(DEFAULT_SHORTCUTS.executeKey);
 });
+
+// ===== Manifest Override UI =====
+
+// 오버라이드 상태 캐시
+let manifestOverrides = {};
+
+// 오버라이드 목록 로드
+async function loadManifestOverrides() {
+  try {
+    const overrides = await window.settingsApi.manifestOverridesList();
+    manifestOverrides = {};
+    overrides.forEach(o => {
+      const key = `${o.toolId}:${o.originalShortcut}`;
+      manifestOverrides[key] = o;
+    });
+  } catch (e) {
+    console.error('[Override] Load error:', e);
+  }
+}
+
+// 오버라이드 모달 생성 (동적)
+function createOverrideModal() {
+  if (document.getElementById('overrideModal')) return;
+
+  const modal = document.createElement('div');
+  modal.id = 'overrideModal';
+  modal.className = 'override-modal hidden';
+  modal.innerHTML = `
+    <div class="override-modal-backdrop"></div>
+    <div class="override-modal-content">
+      <div class="override-modal-header">
+        <h3>명령어 커스터마이즈</h3>
+        <button class="override-modal-close">×</button>
+      </div>
+      <form class="override-form">
+        <input type="hidden" id="overrideToolId">
+        <input type="hidden" id="overrideOriginalShortcut">
+        <div class="form-row">
+          <label>새 단축어</label>
+          <input type="text" id="overrideNewShortcut" placeholder="/명령어">
+          <small class="form-hint">슬래시(/) 없이 입력하세요</small>
+        </div>
+        <div class="form-row">
+          <label>필드 (콤마로 구분)</label>
+          <input type="text" id="overrideFields" placeholder="질문, 옵션">
+          <small class="form-hint">{{필드명}} 형식으로 body에서 사용됩니다</small>
+        </div>
+        <div class="form-row">
+          <label>Body 템플릿</label>
+          <textarea id="overrideBody" placeholder="{{질문}}을 번역해줘"></textarea>
+          <small class="form-hint">{{필드명}} 또는 {{content}}, {{all}}, {{top}} 사용 가능</small>
+        </div>
+      </form>
+      <div class="override-modal-actions">
+        <button type="button" class="btn-cancel">취소</button>
+        <button type="button" class="btn-save">저장</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  // 이벤트 바인딩
+  modal.querySelector('.override-modal-backdrop').addEventListener('click', closeOverrideModal);
+  modal.querySelector('.override-modal-close').addEventListener('click', closeOverrideModal);
+  modal.querySelector('.btn-cancel').addEventListener('click', closeOverrideModal);
+  modal.querySelector('.btn-save').addEventListener('click', saveOverride);
+}
+
+// 오버라이드 모달 열기
+async function openOverrideForm(toolId, command) {
+  createOverrideModal();
+
+  const modal = document.getElementById('overrideModal');
+  const key = `${toolId}:${command.shortcut}`;
+  const existing = manifestOverrides[key];
+
+  document.getElementById('overrideToolId').value = toolId;
+  document.getElementById('overrideOriginalShortcut').value = command.shortcut;
+
+  if (existing) {
+    // 기존 오버라이드 값 로드
+    document.getElementById('overrideNewShortcut').value = existing.shortcut;
+    document.getElementById('overrideFields').value = (existing.fields || []).join(', ');
+    document.getElementById('overrideBody').value = existing.body || '';
+  } else {
+    // 원본 값으로 초기화
+    document.getElementById('overrideNewShortcut').value = command.shortcut;
+    document.getElementById('overrideFields').value = (command.fields || []).join(', ');
+    document.getElementById('overrideBody').value = command.body || '';
+  }
+
+  modal.classList.remove('hidden');
+}
+
+// 오버라이드 모달 닫기
+function closeOverrideModal() {
+  const modal = document.getElementById('overrideModal');
+  if (modal) {
+    modal.classList.add('hidden');
+  }
+}
+
+// 오버라이드 저장
+async function saveOverride() {
+  const toolId = document.getElementById('overrideToolId').value;
+  const originalShortcut = document.getElementById('overrideOriginalShortcut').value;
+  const newShortcut = document.getElementById('overrideNewShortcut').value.trim();
+  const fieldsStr = document.getElementById('overrideFields').value.trim();
+  const body = document.getElementById('overrideBody').value;
+
+  if (!newShortcut) {
+    alert('단축어를 입력하세요');
+    return;
+  }
+
+  const fields = fieldsStr ? fieldsStr.split(',').map(f => f.trim()).filter(f => f) : [];
+
+  try {
+    const result = await window.settingsApi.manifestOverrideUpsert({
+      toolId,
+      originalShortcut,
+      newShortcut,
+      fields,
+      body
+    });
+
+    if (result.success) {
+      closeOverrideModal();
+      await loadManifestOverrides();
+      await loadAvailableTools(); // UI 갱신
+    } else {
+      alert('저장 실패: ' + (result.error || '알 수 없는 오류'));
+    }
+  } catch (e) {
+    alert('저장 실패: ' + e.message);
+  }
+}
+
+// 오버라이드 초기화
+async function resetOverride(toolId, originalShortcut) {
+  const confirmed = await showConfirmModal('이 명령어의 커스터마이즈를 초기화하시겠습니까?');
+  if (!confirmed) return;
+
+  try {
+    const result = await window.settingsApi.manifestOverrideReset(toolId, originalShortcut);
+    if (result.success) {
+      await loadManifestOverrides();
+      await loadAvailableTools(); // UI 갱신
+    }
+  } catch (e) {
+    console.error('[Override] Reset error:', e);
+  }
+}
+
+// 매니페스트 명령어 목록 렌더링
+function renderManifestCommands(tool, container) {
+  const commandsList = document.createElement('div');
+  commandsList.className = 'manifest-commands-list';
+
+  tool.commands.forEach(cmd => {
+    const key = `${tool.id}:${cmd.shortcut}`;
+    const override = manifestOverrides[key];
+    const isOverridden = !!override;
+
+    const item = document.createElement('div');
+    item.className = 'manifest-command-item' + (isOverridden ? ' overridden' : '');
+
+    const displayShortcut = isOverridden ? override.shortcut : cmd.shortcut;
+    const displayFields = isOverridden ? (override.fields || []) : (cmd.fields || []);
+
+    item.innerHTML = `
+      <div class="manifest-command-info">
+        <span class="manifest-command-shortcut">/${escapeHtml(displayShortcut)}</span>
+        ${isOverridden ? `<span class="manifest-command-original">원본: /${escapeHtml(cmd.shortcut)}</span>` : ''}
+        <span class="manifest-command-fields">${displayFields.length > 0 ? displayFields.map(f => '{{' + f + '}}').join(' ') : '(필드 없음)'}</span>
+      </div>
+      <div class="manifest-command-actions">
+        <button class="customize-btn" data-tool-id="${tool.id}" data-shortcut="${cmd.shortcut}">${isOverridden ? '수정' : '커스터마이즈'}</button>
+        ${isOverridden ? `<button class="reset-btn" data-tool-id="${tool.id}" data-shortcut="${cmd.shortcut}">초기화</button>` : ''}
+      </div>
+    `;
+
+    // 커스터마이즈 버튼
+    item.querySelector('.customize-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      openOverrideForm(tool.id, cmd);
+    });
+
+    // 초기화 버튼
+    const resetBtn = item.querySelector('.reset-btn');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        resetOverride(tool.id, cmd.shortcut);
+      });
+    }
+
+    commandsList.appendChild(item);
+  });
+
+  container.appendChild(commandsList);
+}
+
+// 기존 renderToolsList 수정 - 매니페스트 도구에 명령어 목록 추가

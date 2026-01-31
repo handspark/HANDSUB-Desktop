@@ -44,6 +44,12 @@ contextBridge.exposeInMainWorld('settingsApi', {
   getManifestToolSettings: (toolId) => ipcRenderer.invoke('manifest-tool-settings-get', toolId),
   saveManifestToolSettings: (toolId, settings) => ipcRenderer.invoke('manifest-tool-settings-save', toolId, settings),
 
+  // Manifest Override API (매니페스트 단축어 커스터마이즈)
+  manifestOverrideUpsert: (data) => ipcRenderer.invoke('manifest-override-upsert', data),
+  manifestOverrideReset: (toolId, shortcut) => ipcRenderer.invoke('manifest-override-reset', toolId, shortcut),
+  manifestOverrideGet: (toolId, shortcut) => ipcRenderer.invoke('manifest-override-get', toolId, shortcut),
+  manifestOverridesList: () => ipcRenderer.invoke('manifest-overrides-list'),
+
   // Trigger key
   getTriggerKey: () => ipcRenderer.invoke('get-trigger-key'),
   setTriggerKey: (key) => ipcRenderer.invoke('set-trigger-key', key),

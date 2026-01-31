@@ -2308,3 +2308,268 @@ input[type="checkbox"]:checked::before {
 .reset-shortcuts-btn:hover svg {
   fill: var(--text-secondary);
 }
+
+/* ===== Manifest Command Override Styles ===== */
+
+/* 매니페스트 명령어 목록 */
+.manifest-commands-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding-left: 8px;
+  border-left: 2px solid var(--border-color);
+}
+
+.manifest-command-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.manifest-command-item:hover {
+  background: var(--hover-bg);
+}
+
+.manifest-command-item.overridden {
+  background: rgba(0, 122, 255, 0.08);
+  border-left: 2px solid #007AFF;
+}
+
+.manifest-command-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.manifest-command-shortcut {
+  font-weight: 500;
+  color: var(--text-primary);
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+}
+
+.manifest-command-original {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.manifest-command-fields {
+  font-size: 10px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manifest-command-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.manifest-command-actions button {
+  padding: 4px 8px;
+  font-size: 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.manifest-command-actions button:hover {
+  border-color: var(--text-secondary);
+  color: var(--text-secondary);
+}
+
+.manifest-command-actions .reset-btn:hover {
+  border-color: #e55;
+  color: #e55;
+}
+
+/* 오버라이드 모달 */
+.override-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.override-modal.hidden {
+  display: none;
+}
+
+.override-modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.override-modal-content {
+  position: relative;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 20px;
+  min-width: 320px;
+  max-width: 400px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  animation: modalFadeIn 0.15s ease-out;
+}
+
+.override-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.override-modal-header h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.override-modal-close {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.override-modal-close:hover {
+  color: var(--text-primary);
+  background: var(--hover-bg);
+}
+
+.override-form .form-row {
+  margin-bottom: 12px;
+}
+
+.override-form .form-row label {
+  display: block;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.override-form input[type="text"],
+.override-form textarea {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  outline: none;
+}
+
+.override-form input[type="text"]:focus,
+.override-form textarea:focus {
+  border-color: var(--text-secondary);
+}
+
+.override-form textarea {
+  min-height: 80px;
+  resize: vertical;
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  font-size: 11px;
+}
+
+.override-form .form-hint {
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.override-modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.override-modal-actions button {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.override-modal-actions .btn-cancel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.override-modal-actions .btn-cancel:hover {
+  background: var(--hover-bg);
+}
+
+.override-modal-actions .btn-save {
+  background: var(--text-secondary);
+  border: none;
+  color: var(--bg-primary);
+}
+
+.override-modal-actions .btn-save:hover {
+  background: var(--text-primary);
+}
+
+/* 도구 아이템 확장 상태 */
+.tool-item.expanded {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.tool-item.expanded .tool-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.tool-item .tool-expand-indicator {
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+}
+
+.tool-item.expanded .tool-expand-indicator {
+  transform: rotate(90deg);
+}

@@ -162,21 +162,60 @@ export async function loadSnippets() {
   const dbSnippets = await window.api.getSnippets();
   const manifestCommands = await window.api.getManifestCommands();
 
-  const manifestSnippets = manifestCommands.map(cmd => ({
-    id: `manifest:${cmd.toolId}:${cmd.shortcut}`,
-    type: 'manifest',
-    shortcut: cmd.shortcut,
-    name: `${cmd.toolIcon} ${cmd.shortcut}`,
-    icon: cmd.toolIcon || '🔧',
-    config: JSON.stringify({
-      toolId: cmd.toolId,
-      fields: cmd.fields,
-      body: cmd.body
-    }),
-    isManifest: true
-  }));
+  // 오버라이드 맵 생성 (manifestRef 기준)
+  // source='manifest_override'인 스니펫을 manifest_ref로 인덱싱
+  const overrideMap = {};
+  dbSnippets.forEach(s => {
+    if (s.source === 'manifest_override' && s.manifestRef) {
+      overrideMap[s.manifestRef] = s;
+    }
+  });
 
-  snippetState.snippets = [...dbSnippets, ...manifestSnippets];
+  // 매니페스트 명령어 처리 (오버라이드 적용)
+  const manifestSnippets = manifestCommands.map(cmd => {
+    const manifestRef = `${cmd.toolId}:${cmd.shortcut}`;
+    const override = overrideMap[manifestRef];
+
+    if (override) {
+      // 오버라이드된 설정 사용
+      const overrideConfig = safeJsonParse(override.config) || {};
+      return {
+        id: `manifest:${cmd.toolId}:${cmd.shortcut}`,
+        type: 'manifest',
+        shortcut: override.shortcut, // 오버라이드된 단축어
+        name: `${cmd.toolIcon} ${override.shortcut}`,
+        icon: cmd.toolIcon || '🔧',
+        config: JSON.stringify({
+          toolId: cmd.toolId,
+          fields: overrideConfig.fields || cmd.fields,
+          body: overrideConfig.body || cmd.body
+        }),
+        isManifest: true,
+        isOverridden: true,
+        originalShortcut: cmd.shortcut
+      };
+    }
+
+    // 원본 매니페스트 명령어 사용
+    return {
+      id: `manifest:${cmd.toolId}:${cmd.shortcut}`,
+      type: 'manifest',
+      shortcut: cmd.shortcut,
+      name: `${cmd.toolIcon} ${cmd.shortcut}`,
+      icon: cmd.toolIcon || '🔧',
+      config: JSON.stringify({
+        toolId: cmd.toolId,
+        fields: cmd.fields,
+        body: cmd.body
+      }),
+      isManifest: true
+    };
+  });
+
+  // 코드 스니펫만 필터링 (manifest_override는 제외 - 매니페스트 처리에서 이미 적용됨)
+  const codeSnippets = dbSnippets.filter(s => s.source !== 'manifest_override');
+
+  snippetState.snippets = [...codeSnippets, ...manifestSnippets];
 }
 
 export async function loadTriggerKey() {
