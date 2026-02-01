@@ -1182,8 +1182,11 @@ function showLoggedInState(user) {
   // 클라우드 동기화 Pro 잠금 처리
   if (tier === 'pro' || tier === 'lifetime') {
     unlockCloudSync();
+    // Pro 사용자면 소셜 프로필 섹션 표시
+    showSocialProfileSection();
   } else {
     lockCloudSync();
+    hideSocialProfileSection();
   }
 
   // 기능 탭 잠금 해제 (로그인됨)
@@ -1923,3 +1926,181 @@ function renderManifestCommands(tool, container) {
 }
 
 // 기존 renderToolsList 수정 - 매니페스트 도구에 명령어 목록 추가
+
+// ===== Social Profile Management =====
+const socialProfileSection = document.getElementById('socialProfileSection');
+const editProfileBtn = document.getElementById('editProfileBtn');
+const profileDisplay = document.getElementById('profileDisplay');
+const profileEditForm = document.getElementById('profileEditForm');
+const profileUsername = document.getElementById('profileUsername');
+const profileDisplayName = document.getElementById('profileDisplayName');
+const profileBio = document.getElementById('profileBio');
+const inputUsername = document.getElementById('inputUsername');
+const inputDisplayName = document.getElementById('inputDisplayName');
+const inputBio = document.getElementById('inputBio');
+const saveProfileBtn = document.getElementById('saveProfileBtn');
+const cancelProfileBtn = document.getElementById('cancelProfileBtn');
+const profileError = document.getElementById('profileError');
+
+// 현재 프로필 데이터
+let currentProfile = null;
+
+// 소셜 프로필 섹션 표시
+async function showSocialProfileSection() {
+  socialProfileSection?.classList.remove('hidden');
+  await loadSocialProfile();
+}
+
+// 소셜 프로필 섹션 숨기기
+function hideSocialProfileSection() {
+  socialProfileSection?.classList.add('hidden');
+}
+
+// 소셜 프로필 로드
+async function loadSocialProfile() {
+  try {
+    const result = await window.settingsApi.profileGet();
+
+    if (result.success && result.profile) {
+      currentProfile = result.profile;
+      renderProfileDisplay(result.profile);
+    } else {
+      // 프로필 없음 - 기본값 표시
+      renderProfileDisplay({});
+    }
+  } catch (e) {
+    console.error('[Profile] Load error:', e);
+    renderProfileDisplay({});
+  }
+}
+
+// 프로필 표시 렌더링
+function renderProfileDisplay(profile) {
+  if (profileUsername) {
+    profileUsername.textContent = profile.username ? `@${profile.username}` : '미설정';
+    profileUsername.style.color = profile.username ? '' : 'var(--text-muted)';
+  }
+  if (profileDisplayName) {
+    profileDisplayName.textContent = profile.displayName || '미설정';
+    profileDisplayName.style.color = profile.displayName ? '' : 'var(--text-muted)';
+  }
+  if (profileBio) {
+    profileBio.textContent = profile.bio || '미설정';
+    profileBio.style.color = profile.bio ? '' : 'var(--text-muted)';
+  }
+}
+
+// 편집 모드 전환
+function showProfileEditForm() {
+  profileDisplay?.classList.add('hidden');
+  profileEditForm?.classList.remove('hidden');
+  editProfileBtn.textContent = '취소';
+
+  // 현재 값으로 폼 채우기
+  if (inputUsername) inputUsername.value = currentProfile?.username || '';
+  if (inputDisplayName) inputDisplayName.value = currentProfile?.displayName || '';
+  if (inputBio) inputBio.value = currentProfile?.bio || '';
+
+  // 에러 숨기기
+  profileError?.classList.add('hidden');
+}
+
+// 보기 모드 전환
+function hideProfileEditForm() {
+  profileDisplay?.classList.remove('hidden');
+  profileEditForm?.classList.add('hidden');
+  editProfileBtn.textContent = '수정';
+  profileError?.classList.add('hidden');
+}
+
+// 프로필 저장
+async function saveProfile() {
+  const username = inputUsername?.value.trim().toLowerCase() || null;
+  const displayName = inputDisplayName?.value.trim() || null;
+  const bio = inputBio?.value.trim() || null;
+
+  // 유효성 검사
+  if (username && !/^[a-z0-9_]{3,30}$/.test(username)) {
+    showProfileError('사용자명은 3-30자의 영문 소문자, 숫자, 언더스코어만 가능합니다');
+    return;
+  }
+
+  if (displayName && displayName.length > 100) {
+    showProfileError('표시 이름은 100자 이내로 입력해주세요');
+    return;
+  }
+
+  if (bio && bio.length > 200) {
+    showProfileError('자기소개는 200자 이내로 입력해주세요');
+    return;
+  }
+
+  // 저장 버튼 비활성화
+  saveProfileBtn.disabled = true;
+  saveProfileBtn.textContent = '저장 중...';
+
+  try {
+    const result = await window.settingsApi.profileUpdate({
+      username,
+      displayName,
+      bio
+    });
+
+    if (result.success) {
+      // 성공 - 현재 프로필 업데이트
+      currentProfile = {
+        ...currentProfile,
+        username: result.username,
+        displayName: result.displayName,
+        bio: result.bio
+      };
+      renderProfileDisplay(currentProfile);
+      hideProfileEditForm();
+    } else {
+      // 에러 표시
+      let errorMsg = '저장에 실패했습니다';
+      if (result.error === 'username_taken') {
+        errorMsg = '이미 사용 중인 사용자명입니다';
+      } else if (result.error === 'invalid_username') {
+        errorMsg = result.message || '유효하지 않은 사용자명입니다';
+      } else if (result.message) {
+        errorMsg = result.message;
+      }
+      showProfileError(errorMsg);
+    }
+  } catch (e) {
+    console.error('[Profile] Save error:', e);
+    showProfileError('저장 중 오류가 발생했습니다');
+  } finally {
+    saveProfileBtn.disabled = false;
+    saveProfileBtn.textContent = '저장';
+  }
+}
+
+// 에러 표시
+function showProfileError(message) {
+  if (profileError) {
+    profileError.textContent = message;
+    profileError.classList.remove('hidden');
+  }
+}
+
+// 이벤트 리스너
+editProfileBtn?.addEventListener('click', () => {
+  if (profileEditForm?.classList.contains('hidden')) {
+    showProfileEditForm();
+  } else {
+    hideProfileEditForm();
+  }
+});
+
+cancelProfileBtn?.addEventListener('click', hideProfileEditForm);
+saveProfileBtn?.addEventListener('click', saveProfile);
+
+// Enter 키로 저장
+inputUsername?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') saveProfile();
+});
+inputDisplayName?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') saveProfile();
+});

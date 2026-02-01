@@ -76,6 +76,10 @@ contextBridge.exposeInMainWorld('settingsApi', {
   authRefresh: () => ipcRenderer.invoke('auth-refresh'),
   authIsPro: () => ipcRenderer.invoke('auth-is-pro'),
 
+  // Profile API (소셜 프로필)
+  profileGet: () => ipcRenderer.invoke('profile-get'),
+  profileUpdate: (data) => ipcRenderer.invoke('profile-update', data),  // { username, displayName, bio }
+
   // Cloud Memo API
   cloudGetMemos: () => ipcRenderer.invoke('cloud-get-memos'),
   getAll: () => ipcRenderer.invoke('memo-getAll'),  // 로컬 메모 목록 (클라우드 메모 개수 확인용)

@@ -4454,6 +4454,66 @@ ipcMain.handle('auth-refresh', async () => {
   return result ? { success: true, user: result.user } : { success: false };
 });
 
+// 소셜 프로필 조회
+ipcMain.handle('profile-get', async () => {
+  const auth = getStoredAuth();
+  if (!auth?.accessToken) {
+    return { success: false, error: 'not_logged_in' };
+  }
+
+  try {
+    const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
+    // fetchWithAuth는 이미 파싱된 JSON 객체를 반환함
+    const profile = await fetchWithAuth(`${serverUrl}/api/v2/profile/me`);
+
+    if (profile.error) {
+      return { success: false, error: profile.error };
+    }
+
+    return { success: true, profile };
+  } catch (e) {
+    console.error('[Profile] Get error:', e);
+    return { success: false, error: e.message };
+  }
+});
+
+// 소셜 프로필 업데이트
+ipcMain.handle('profile-update', async (_, data) => {
+  const auth = getStoredAuth();
+  if (!auth?.accessToken) {
+    return { success: false, error: 'not_logged_in' };
+  }
+
+  try {
+    const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
+    // fetchWithAuth는 이미 파싱된 JSON 객체를 반환함
+    const result = await fetchWithAuth(`${serverUrl}/api/v2/profile/me`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+
+    if (result.error) {
+      return { success: false, error: result.error, message: result.message };
+    }
+
+    // 로컬 저장된 인증 정보의 사용자 정보 업데이트
+    const storedAuth = getStoredAuth();
+    if (storedAuth && result.success) {
+      storedAuth.user.username = result.username;
+      storedAuth.user.displayName = result.displayName;
+      storedAuth.user.bio = result.bio;
+      await saveAuthTokens(storedAuth);
+    }
+
+    console.log('[Profile] Updated:', result.username);
+    return { success: true, ...result };
+  } catch (e) {
+    console.error('[Profile] Update error:', e);
+    return { success: false, error: e.message };
+  }
+});
+
 // 앱 시작 시 프로필 갱신 (구매 후 티어 반영)
 async function refreshUserProfileOnStartup() {
   try {

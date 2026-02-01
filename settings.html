@@ -193,6 +193,49 @@
             </div>
           </div>
 
+          <!-- 소셜 프로필 편집 (Pro 전용) -->
+          <div id="socialProfileSection" class="social-profile-section hidden">
+            <div class="section-header">
+              <span>소셜 프로필</span>
+              <button type="button" id="editProfileBtn" class="btn-edit-profile">수정</button>
+            </div>
+            <div id="profileDisplay" class="profile-display">
+              <div class="profile-row">
+                <span class="profile-label">사용자명</span>
+                <span class="profile-value" id="profileUsername">-</span>
+              </div>
+              <div class="profile-row">
+                <span class="profile-label">표시 이름</span>
+                <span class="profile-value" id="profileDisplayName">-</span>
+              </div>
+              <div class="profile-row">
+                <span class="profile-label">자기소개</span>
+                <span class="profile-value" id="profileBio">-</span>
+              </div>
+            </div>
+            <div id="profileEditForm" class="profile-edit-form hidden">
+              <div class="form-row">
+                <label for="inputUsername">사용자명</label>
+                <input type="text" id="inputUsername" placeholder="영문 소문자, 숫자, 언더스코어" maxlength="30">
+                <small class="form-hint">3-30자, 영문 소문자/숫자/_ 만 가능</small>
+              </div>
+              <div class="form-row">
+                <label for="inputDisplayName">표시 이름</label>
+                <input type="text" id="inputDisplayName" placeholder="화면에 표시될 이름" maxlength="100">
+              </div>
+              <div class="form-row">
+                <label for="inputBio">자기소개</label>
+                <textarea id="inputBio" placeholder="간단한 자기소개" maxlength="200" rows="2"></textarea>
+                <small class="form-hint">최대 200자</small>
+              </div>
+              <div class="form-actions">
+                <button type="button" id="cancelProfileBtn" class="btn-cancel">취소</button>
+                <button type="button" id="saveProfileBtn" class="btn-save">저장</button>
+              </div>
+              <p id="profileError" class="error-message hidden"></p>
+            </div>
+          </div>
+
           <!-- 동기화 상태 표시 -->
           <div class="sync-status-row" id="syncStatusRow">
             <span class="sync-status-dot"></span>
