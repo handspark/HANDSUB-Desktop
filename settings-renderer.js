@@ -1359,6 +1359,48 @@ toolsLoginBtn?.addEventListener('click', async () => {
 // Auth 초기화
 initAuth();
 
+// ===== Sync Status (로컬-퍼스트) =====
+const syncStatusRow = document.getElementById('syncStatusRow');
+const syncStatusText = document.getElementById('syncStatusText');
+
+// 동기화 상태 업데이트 (두 가지만: 동기화 / 오프라인)
+function updateSyncStatus(status) {
+  if (!syncStatusRow || !syncStatusText) return;
+
+  // 클래스 초기화
+  syncStatusRow.className = 'sync-status-row visible';
+
+  if (status === 'offline') {
+    syncStatusRow.classList.add('offline');
+    syncStatusText.textContent = '오프라인';
+  } else {
+    // syncing, synced, idle, error 등 → 동기화
+    syncStatusRow.classList.add('synced');
+    syncStatusText.textContent = '동기화';
+  }
+}
+
+// 동기화 상태 이벤트 리스너
+window.settingsApi.onSyncStatus?.((status) => {
+  updateSyncStatus(status);
+});
+
+// Pro 사용자면 초기 상태 표시
+async function initSyncStatus() {
+  try {
+    const isPro = await window.settingsApi.authIsPro?.();
+    if (isPro) {
+      // 초기 상태: 동기화됨 표시
+      updateSyncStatus('synced');
+    }
+  } catch (e) {
+    console.log('[Sync] Init status error:', e);
+  }
+}
+
+// 설정 창 로드 후 초기화
+setTimeout(initSyncStatus, 500);
+
 // ===== Update Check =====
 const checkUpdateBtn = document.getElementById('checkUpdateBtn');
 const updateAvailable = document.getElementById('updateAvailable');

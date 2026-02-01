@@ -87,4 +87,7 @@ contextBridge.exposeInMainWorld('settingsApi', {
 
   // 티어 실시간 업데이트 (WebSocket)
   onTierUpdated: (callback) => ipcRenderer.on('tier-updated', (_, data) => callback(data)),
+
+  // 동기화 상태 이벤트 (로컬-퍼스트)
+  onSyncStatus: (callback) => ipcRenderer.on('sync-status', (_, status) => callback(status)),
 });

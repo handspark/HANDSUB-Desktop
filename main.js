@@ -488,6 +488,50 @@ if (!snippetColumns.includes('manifest_ref')) {
   db.exec(`ALTER TABLE snippets ADD COLUMN manifest_ref TEXT`);
 }
 
+// ===== 로컬-퍼스트 동기화 스키마 마이그레이션 =====
+
+// memos 테이블에 동기화 컬럼 추가
+try {
+  db.exec(`ALTER TABLE memos ADD COLUMN sync_status TEXT DEFAULT 'local'`);
+  // 'local': 로컬만 | 'pending': 동기화 대기 | 'synced': 동기화됨 | 'conflict': 충돌
+} catch (e) {
+  // 이미 존재하면 무시
+}
+
+try {
+  db.exec(`ALTER TABLE memos ADD COLUMN local_updated_at INTEGER`);
+} catch (e) {
+  // 이미 존재하면 무시
+}
+
+try {
+  db.exec(`ALTER TABLE memos ADD COLUMN server_updated_at INTEGER`);
+} catch (e) {
+  // 이미 존재하면 무시
+}
+
+// sync_queue 테이블 생성 (오프라인 큐)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sync_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    payload TEXT,
+    created_at INTEGER NOT NULL,
+    retry_count INTEGER DEFAULT 0,
+    last_error TEXT,
+    UNIQUE(entity_type, entity_id)
+  );
+`);
+
+// sync_queue 인덱스
+try {
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_sync_queue_entity ON sync_queue(entity_type, entity_id)`);
+} catch (e) {
+  // 이미 존재하면 무시
+}
+
 // ===== 기존 메모 체크박스 마이그레이션 (todo_tracking) =====
 function migrateExistingTodos() {
   console.log('[Todo Migration] Function called');
@@ -621,7 +665,32 @@ ipcMain.handle('memo-create', () => {
 
 ipcMain.handle('memo-update', (event, id, content) => {
   if (!isValidId(id) || !isValidContent(content)) return false;
-  db.prepare('UPDATE memos SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(content, id);
+
+  const now = Date.now();
+
+  // 메모 업데이트 (로컬-퍼스트: sync_status를 pending으로)
+  db.prepare(`
+    UPDATE memos
+    SET content = ?,
+        updated_at = CURRENT_TIMESTAMP,
+        local_updated_at = ?,
+        sync_status = CASE
+          WHEN sync_status = 'synced' THEN 'pending'
+          WHEN sync_status IS NULL THEN 'local'
+          ELSE sync_status
+        END
+    WHERE id = ?
+  `).run(content, now, id);
+
+  // Pro 사용자면 동기화 큐에 추가
+  if (isPro()) {
+    const memo = db.prepare('SELECT uuid FROM memos WHERE id = ?').get(id);
+    if (memo?.uuid) {
+      SyncManager.queueForSync('memo', memo.uuid, 'update');
+      SyncManager.scheduleBatchSync(); // 2초 디바운스
+    }
+  }
+
   // 모든 창에 메모 변경 알림
   BrowserWindow.getAllWindows().forEach(w => {
     if (w.webContents !== event.sender && !w.isDestroyed()) {
@@ -2423,6 +2492,430 @@ async function refreshAuthTokens() {
 function isPro() {
   const auth = getStoredAuth();
   return auth?.user?.tier === 'pro' || auth?.user?.tier === 'lifetime';
+}
+
+// ===== SyncManager - 로컬-퍼스트 동기화 모듈 =====
+
+const SYNC_CONFIG = {
+  debounceDelay: 2000,     // 2초 디바운스
+  maxBatchSize: 20,        // 최대 20개씩 배치
+  maxRetries: 5,           // 최대 5회 재시도
+  retryDelays: [1000, 5000, 30000, 120000, 600000], // 1초, 5초, 30초, 2분, 10분
+  connectivityCheckInterval: 30000 // 30초마다 연결 확인
+};
+
+let isOnline = true;
+let syncDebounceTimer = null;
+let syncInProgress = false;
+
+const SyncManager = {
+  // 대기 중인 메모 조회
+  getPendingMemos() {
+    return db.prepare(`
+      SELECT m.*, sq.operation
+      FROM memos m
+      LEFT JOIN sync_queue sq ON sq.entity_type = 'memo' AND sq.entity_id = m.uuid
+      WHERE m.sync_status = 'pending' OR sq.id IS NOT NULL
+      ORDER BY m.local_updated_at ASC
+      LIMIT ?
+    `).all(SYNC_CONFIG.maxBatchSize);
+  },
+
+  // 동기화 완료 표시
+  markSynced(memoUuids, serverTimestamp) {
+    const stmt = db.prepare(`
+      UPDATE memos
+      SET sync_status = 'synced', server_updated_at = ?
+      WHERE uuid = ?
+    `);
+    const deleteQueueStmt = db.prepare(`
+      DELETE FROM sync_queue WHERE entity_type = 'memo' AND entity_id = ?
+    `);
+
+    const markMany = db.transaction((uuids) => {
+      for (const uuid of uuids) {
+        stmt.run(serverTimestamp, uuid);
+        deleteQueueStmt.run(uuid);
+      }
+    });
+    markMany(memoUuids);
+  },
+
+  // 충돌 표시
+  markConflict(memoUuid, serverContent, serverUpdatedAt) {
+    db.prepare(`
+      UPDATE memos
+      SET sync_status = 'conflict', server_updated_at = ?
+      WHERE uuid = ?
+    `).run(serverUpdatedAt, memoUuid);
+    console.log('[Sync] Conflict detected for memo:', memoUuid);
+  },
+
+  // 큐에 추가 (중복 병합)
+  queueForSync(entityType, entityId, operation, payload = null) {
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO sync_queue (entity_type, entity_id, operation, payload, created_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(entity_type, entity_id) DO UPDATE SET
+        operation = ?,
+        payload = ?,
+        created_at = ?,
+        retry_count = 0,
+        last_error = NULL
+    `).run(entityType, entityId, operation, payload, now, operation, payload, now);
+  },
+
+  // 배치 동기화 스케줄링 (디바운스)
+  scheduleBatchSync() {
+    if (syncDebounceTimer) {
+      clearTimeout(syncDebounceTimer);
+    }
+    syncDebounceTimer = setTimeout(() => {
+      SyncManager.performBatchSync();
+    }, SYNC_CONFIG.debounceDelay);
+  },
+
+  // 배치 동기화 실행
+  async performBatchSync() {
+    if (!isOnline || !isPro() || syncInProgress) {
+      console.log('[Sync] Skip batch sync - online:', isOnline, 'isPro:', isPro(), 'inProgress:', syncInProgress);
+      return;
+    }
+
+    syncInProgress = true;
+    notifySyncStatus('syncing');
+
+    try {
+      const pendingMemos = this.getPendingMemos();
+      const pendingSettings = this.getPendingSettings();
+      const pendingSnippets = this.getPendingSnippets();
+
+      if (pendingMemos.length === 0 && pendingSettings.length === 0 && pendingSnippets.length === 0) {
+        console.log('[Sync] No pending items');
+        notifySyncStatus('synced');
+        return;
+      }
+
+      console.log('[Sync] Batch sync starting - memos:', pendingMemos.length, 'settings:', pendingSettings.length, 'snippets:', pendingSnippets.length);
+
+      // 배치 요청 데이터 구성
+      const batchData = {
+        memos: pendingMemos.map(m => ({
+          memoUuid: m.uuid,
+          content: m.content,
+          pinned: m.pinned === 1,
+          localUpdatedAt: m.local_updated_at || Date.now()
+        })),
+        settings: pendingSettings,
+        snippets: pendingSnippets,
+        lastSyncTimestamp: this.getLastSyncTimestamp()
+      };
+
+      const auth = getStoredAuth();
+      if (!auth?.accessToken) {
+        console.log('[Sync] No auth token');
+        notifySyncStatus('error');
+        return;
+      }
+
+      const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
+      const response = await fetch(`${serverUrl}/api/v2/cloud/batch-sync`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${auth.accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(batchData)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Sync failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+      this.handleSyncResult(result);
+
+      notifySyncStatus('synced', result.syncedCount);
+      console.log('[Sync] Batch sync completed - synced:', result.syncedCount);
+
+    } catch (e) {
+      console.error('[Sync] Batch sync error:', e);
+      notifySyncStatus('error');
+
+      // 재시도 스케줄링
+      this.scheduleRetry();
+    } finally {
+      syncInProgress = false;
+    }
+  },
+
+  // 동기화 결과 처리
+  handleSyncResult(result) {
+    const { synced = [], conflicts = [], serverChanges = [], serverTime } = result;
+
+    // 성공한 메모 마킹
+    if (synced.length > 0) {
+      const syncedUuids = synced.map(s => s.memoUuid);
+      this.markSynced(syncedUuids, serverTime);
+    }
+
+    // 충돌 처리
+    for (const conflict of conflicts) {
+      this.handleConflict(conflict);
+    }
+
+    // 서버 변경사항 적용 (다른 기기에서 변경된 것)
+    for (const serverMemo of serverChanges) {
+      this.applyServerChange(serverMemo);
+    }
+
+    // 마지막 동기화 시간 저장
+    this.setLastSyncTimestamp(serverTime);
+  },
+
+  // 충돌 해결
+  handleConflict(conflict) {
+    const { memoUuid, serverContent, serverUpdatedAt } = conflict;
+
+    // 로컬 메모 조회
+    const localMemo = db.prepare('SELECT content FROM memos WHERE uuid = ?').get(memoUuid);
+    if (!localMemo) return;
+
+    const clientContent = localMemo.content;
+
+    // 내용이 같으면 충돌 아님
+    if (clientContent.trim() === serverContent.trim()) {
+      this.markSynced([memoUuid], serverUpdatedAt);
+      return;
+    }
+
+    // 스마트 머지 시도 (라인 기반)
+    const merged = this.attemptLineMerge(clientContent, serverContent);
+
+    if (merged !== null) {
+      // 머지 성공 → 적용 후 재동기화
+      db.prepare(`
+        UPDATE memos SET content = ?, local_updated_at = ?, sync_status = 'pending'
+        WHERE uuid = ?
+      `).run(merged, Date.now(), memoUuid);
+      this.queueForSync('memo', memoUuid, 'update');
+      console.log('[Sync] Merge successful for memo:', memoUuid);
+    } else {
+      // 머지 실패 → 충돌 표시 및 사용자 알림
+      this.markConflict(memoUuid, serverContent, serverUpdatedAt);
+      notifySyncStatus('conflict', 1);
+    }
+  },
+
+  // 라인 기반 스마트 머지 (단순 버전)
+  attemptLineMerge(clientContent, serverContent) {
+    const clientLines = clientContent.split('\n');
+    const serverLines = serverContent.split('\n');
+
+    // 라인 수가 같고 차이가 적으면 머지 시도
+    if (Math.abs(clientLines.length - serverLines.length) > 5) {
+      return null; // 차이가 너무 큼
+    }
+
+    // 간단한 머지: 긴 쪽을 선택하되, 체크박스 상태는 클라이언트 우선
+    const merged = [];
+    const maxLen = Math.max(clientLines.length, serverLines.length);
+
+    for (let i = 0; i < maxLen; i++) {
+      const clientLine = clientLines[i] || '';
+      const serverLine = serverLines[i] || '';
+
+      if (clientLine === serverLine) {
+        merged.push(clientLine);
+      } else if (clientLine.includes('☑') || clientLine.includes('☐')) {
+        // 체크박스 라인은 클라이언트 우선
+        merged.push(clientLine);
+      } else if (serverLine.includes('☑') || serverLine.includes('☐')) {
+        merged.push(serverLine);
+      } else if (clientLine.length > serverLine.length) {
+        merged.push(clientLine);
+      } else {
+        merged.push(serverLine);
+      }
+    }
+
+    return merged.join('\n');
+  },
+
+  // 서버 변경사항 적용
+  applyServerChange(serverMemo) {
+    const { memoUuid, content, pinned, serverUpdatedAt, deleted } = serverMemo;
+
+    if (deleted) {
+      // 삭제된 메모
+      db.prepare('DELETE FROM memos WHERE uuid = ?').run(memoUuid);
+      return;
+    }
+
+    const existing = db.prepare('SELECT id, local_updated_at FROM memos WHERE uuid = ?').get(memoUuid);
+
+    if (existing) {
+      // 로컬 변경이 없으면 서버 내용 적용
+      if (!existing.local_updated_at || existing.local_updated_at < serverUpdatedAt) {
+        db.prepare(`
+          UPDATE memos SET content = ?, pinned = ?, server_updated_at = ?, sync_status = 'synced'
+          WHERE uuid = ?
+        `).run(content, pinned ? 1 : 0, serverUpdatedAt, memoUuid);
+      }
+    } else {
+      // 새 메모 추가
+      db.prepare(`
+        INSERT INTO memos (uuid, content, pinned, sync_status, server_updated_at, is_cloud)
+        VALUES (?, ?, ?, 'synced', ?, 1)
+      `).run(memoUuid, content, pinned ? 1 : 0, serverUpdatedAt);
+    }
+
+    // UI 갱신
+    BrowserWindow.getAllWindows().forEach(w => {
+      if (!w.isDestroyed()) {
+        w.webContents.send('memos-updated');
+      }
+    });
+  },
+
+  // 대기 중인 설정 조회
+  getPendingSettings() {
+    return db.prepare(`
+      SELECT key, value, updated_at FROM settings_sync
+      WHERE synced_at < updated_at
+    `).all().map(s => ({
+      key: s.key,
+      value: s.value,
+      updatedAt: s.updated_at
+    }));
+  },
+
+  // 대기 중인 스니펫 조회
+  getPendingSnippets() {
+    return db.prepare(`
+      SELECT * FROM snippets
+      WHERE synced_at < updated_at OR synced_at = 0
+    `).all().map(s => ({
+      id: s.id,
+      type: s.type,
+      shortcut: s.shortcut,
+      name: s.name,
+      config: s.config,
+      updatedAt: s.updated_at
+    }));
+  },
+
+  // 마지막 동기화 시간 조회/저장
+  getLastSyncTimestamp() {
+    const result = db.prepare("SELECT value FROM settings_sync WHERE key = 'lastSyncTimestamp'").get();
+    return result ? parseInt(result.value) : 0;
+  },
+
+  setLastSyncTimestamp(timestamp) {
+    db.prepare(`
+      INSERT OR REPLACE INTO settings_sync (key, value, updated_at, synced_at)
+      VALUES ('lastSyncTimestamp', ?, ?, ?)
+    `).run(String(timestamp), timestamp, timestamp);
+  },
+
+  // 재시도 스케줄링
+  scheduleRetry() {
+    const queueItem = db.prepare(`
+      SELECT retry_count FROM sync_queue ORDER BY retry_count ASC LIMIT 1
+    `).get();
+
+    if (!queueItem) return;
+
+    const retryCount = queueItem.retry_count || 0;
+    if (retryCount >= SYNC_CONFIG.maxRetries) {
+      console.log('[Sync] Max retries reached');
+      return;
+    }
+
+    const delay = SYNC_CONFIG.retryDelays[Math.min(retryCount, SYNC_CONFIG.retryDelays.length - 1)];
+
+    // 재시도 카운터 증가
+    db.prepare('UPDATE sync_queue SET retry_count = retry_count + 1').run();
+
+    setTimeout(() => {
+      SyncManager.performBatchSync();
+    }, delay);
+
+    console.log('[Sync] Retry scheduled in', delay, 'ms');
+  },
+
+  // 서버 변경사항 가져오기 (풀)
+  async pullServerChanges() {
+    if (!isOnline || !isPro()) return;
+
+    try {
+      const auth = getStoredAuth();
+      if (!auth?.accessToken) return;
+
+      const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
+      const lastSync = this.getLastSyncTimestamp();
+
+      const response = await fetch(`${serverUrl}/api/v2/cloud/changes?since=${lastSync}`, {
+        headers: { 'Authorization': `Bearer ${auth.accessToken}` }
+      });
+
+      if (!response.ok) return;
+
+      const { changes, serverTime } = await response.json();
+
+      for (const change of changes || []) {
+        this.applyServerChange(change);
+      }
+
+      this.setLastSyncTimestamp(serverTime);
+    } catch (e) {
+      console.error('[Sync] Pull changes error:', e);
+    }
+  }
+};
+
+// 동기화 상태 알림 함수
+function notifySyncStatus(status, count = 0) {
+  BrowserWindow.getAllWindows().forEach(w => {
+    if (!w.isDestroyed()) {
+      w.webContents.send('sync-status', status, count);
+    }
+  });
+}
+
+// 온라인/오프라인 감지
+async function checkConnectivity() {
+  try {
+    const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const response = await fetch(`${serverUrl}/health`, {
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (!isOnline && response.ok) {
+      isOnline = true;
+      console.log('[Sync] Back online - triggering sync');
+      SyncManager.performBatchSync();
+    }
+    isOnline = response.ok;
+  } catch (e) {
+    if (isOnline) {
+      console.log('[Sync] Went offline');
+    }
+    isOnline = false;
+  }
+
+  notifySyncStatus(isOnline ? 'idle' : 'offline');
+}
+
+// 주기적 연결 확인 시작 (앱 ready 후)
+function startConnectivityCheck() {
+  checkConnectivity();
+  setInterval(checkConnectivity, SYNC_CONFIG.connectivityCheckInterval);
 }
 
 // ===== Memo Transfer API (v2 - 로그인 기반) =====
@@ -4627,6 +5120,9 @@ app.whenReady().then(() => {
 
   // WebSocket 실시간 알림 연결
   connectWebSocket();
+
+  // 로컬-퍼스트 동기화: 연결성 확인 시작
+  startConnectivityCheck();
 
   app.on('activate', () => {
     // 이미 창이 표시 중이면 무시

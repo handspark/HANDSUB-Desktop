@@ -1580,6 +1580,53 @@ input[type="checkbox"]:checked::before {
   color: var(--text-secondary);
 }
 
+/* Sync Status Row (between profile and logout) */
+.sync-status-row {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+}
+
+.sync-status-row.visible {
+  display: flex;
+}
+
+.sync-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.sync-status-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* Online state (동기화) - 흰/검정 원 */
+.sync-status-row.synced .sync-status-dot {
+  background: var(--text-primary);
+}
+
+.sync-status-row.synced .sync-status-text {
+  color: var(--text-secondary);
+}
+
+/* Offline state (오프라인) - 연한 회색 */
+.sync-status-row.offline .sync-status-dot {
+  background: var(--text-muted);
+  opacity: 0.5;
+}
+
+.sync-status-row.offline .sync-status-text {
+  color: var(--text-muted);
+}
+
 /* Auth Actions */
 .auth-actions {
   display: flex;

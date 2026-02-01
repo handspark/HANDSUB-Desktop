@@ -39,6 +39,9 @@ const authLogoutListener = createSafeListener('auth-logout');
 const tierUpdatedListener = createSafeListener('tier-updated');
 const appFocusedListener = createSafeListener('app-focused');
 
+// 동기화 상태 리스너
+const syncStatusListener = createSafeListener('sync-status');
+
 // 협업 관련 리스너
 const wsConnectedListener = createSafeListener('ws-connected');
 const wsDisconnectedListener = createSafeListener('ws-disconnected');
@@ -216,6 +219,10 @@ contextBridge.exposeInMainWorld('api', {
   // ===== App Focus (할일 리마인더용) =====
   onAppFocused: (callback) => appFocusedListener.on(callback),
   offAppFocused: () => appFocusedListener.off(),
+
+  // ===== 동기화 상태 (로컬-퍼스트) =====
+  onSyncStatus: (callback) => syncStatusListener.on(callback),
+  offSyncStatus: () => syncStatusListener.off(),
 
   // ===== WebSocket 연결 상태 =====
   onWsConnected: (callback) => wsConnectedListener.on(callback),

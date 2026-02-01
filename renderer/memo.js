@@ -352,3 +352,86 @@ export function triggerSave() {
     saveCurrentContent();
   }, 300);
 }
+
+// ===== 동기화 상태 UI (로컬-퍼스트) =====
+
+let syncIndicator = null;
+let syncHideTimer = null;
+
+// 동기화 인디케이터 생성
+function createSyncIndicator() {
+  if (syncIndicator) return syncIndicator;
+
+  syncIndicator = document.createElement('div');
+  syncIndicator.className = 'sync-indicator';
+  syncIndicator.innerHTML = `
+    <span class="sync-dot"></span>
+    <span class="sync-text"></span>
+  `;
+  document.body.appendChild(syncIndicator);
+  return syncIndicator;
+}
+
+// 동기화 상태 표시
+function showSyncStatus(status, count = 0) {
+  const indicator = createSyncIndicator();
+  const textEl = indicator.querySelector('.sync-text');
+
+  // 기존 타이머 취소
+  if (syncHideTimer) {
+    clearTimeout(syncHideTimer);
+    syncHideTimer = null;
+  }
+
+  // 상태별 클래스 및 텍스트 설정
+  indicator.className = 'sync-indicator';
+
+  switch (status) {
+    case 'syncing':
+      indicator.classList.add('syncing', 'visible');
+      textEl.textContent = '동기화 중...';
+      break;
+
+    case 'synced':
+      // 저장됨 상태는 메모 화면에서 표시하지 않음 (방해됨)
+      // 설정 화면의 계정 섹션에서만 표시
+      indicator.classList.remove('visible');
+      break;
+
+    case 'offline':
+      indicator.classList.add('offline', 'visible');
+      textEl.textContent = '오프라인';
+      break;
+
+    case 'error':
+      indicator.classList.add('error', 'visible');
+      textEl.textContent = '동기화 오류';
+      // 3초 후 숨기기
+      syncHideTimer = setTimeout(() => {
+        indicator.classList.remove('visible');
+      }, 3000);
+      break;
+
+    case 'conflict':
+      indicator.classList.add('conflict', 'visible');
+      textEl.textContent = count > 0 ? `${count}개 충돌` : '동기화 충돌';
+      break;
+
+    case 'idle':
+    default:
+      // 숨기기
+      indicator.classList.remove('visible');
+      break;
+  }
+}
+
+// 동기화 상태는 설정 화면에서만 표시 (메모 화면에서는 방해됨)
+// 메모 화면의 플로팅 인디케이터 비활성화
+// if (window.api?.onSyncStatus) {
+//   window.api.onSyncStatus((status, count) => {
+//     showSyncStatus(status, count);
+//   });
+// }
+
+// 전역 노출 (테스트/디버그용)
+window.showSyncStatus = showSyncStatus;
