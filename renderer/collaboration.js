@@ -921,13 +921,33 @@ export async function declineInvite(inviteId) {
 }
 
 /**
- * 알림 드롭다운 렌더링 (협업 초대 + 리마인더 등)
+ * 알림 드롭다운 렌더링 (협업 초대 + 할일 리마인더)
  */
 function renderInviteBanner() {
   renderNotificationDropdown();
 }
 
-function renderNotificationDropdown() {
+// 시간 포맷 헬퍼
+function formatTimeAgo(timestamp) {
+  const now = Date.now();
+  const diff = now - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (minutes < 60) return `${minutes}분 전`;
+  if (hours < 24) return `${hours}시간 전`;
+  return `${days}일 전`;
+}
+
+// HTML 이스케이프
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+async function renderNotificationDropdown() {
   const dropdown = document.getElementById('notification-dropdown');
   const list = document.getElementById('notification-dropdown-list');
   const empty = document.getElementById('notification-dropdown-empty');
@@ -935,15 +955,30 @@ function renderNotificationDropdown() {
 
   if (!dropdown || !list || !badge) return;
 
-  // 협업 초대 목록
+  // 1. 협업 초대 목록
   const pendingInvites = inviteState.invites;
 
-  // 총 알림 개수 (나중에 리마인더 등 추가)
-  const totalCount = pendingInvites.length;
+  // 2. 할일 리마인더 (시간 없는 할일)
+  let todoReminders = [];
+  try {
+    todoReminders = await window.api.getTodoReminders() || [];
+  } catch (e) {
+    console.error('[Notification] Get todo reminders error:', e);
+  }
 
-  // 배지 업데이트
+  // 3. 공유 메모 알림 (notification_history)
+  let shareNotifications = [];
+  try {
+    const allNotifications = await window.api.getUnreadNotifications() || [];
+    shareNotifications = allNotifications.filter(n => n.type === 'share');
+  } catch (e) {
+    console.error('[Notification] Get share notifications error:', e);
+  }
+
+  const totalCount = pendingInvites.length + todoReminders.length + shareNotifications.length;
+
+  // 배지 업데이트 (점 스타일 - 있으면 표시, 없으면 숨김)
   if (totalCount > 0) {
-    badge.textContent = totalCount > 9 ? '9+' : totalCount;
     badge.classList.remove('hidden');
   } else {
     badge.classList.add('hidden');
@@ -987,7 +1022,57 @@ function renderNotificationDropdown() {
     list.appendChild(item);
   });
 
-  // 이벤트 바인딩
+  // 할일 리마인더 렌더링
+  todoReminders.forEach(todo => {
+    const item = document.createElement('div');
+    item.className = 'notification-item todo-reminder';
+    item.dataset.memoId = todo.memo_id;
+    item.dataset.checkboxIndex = todo.checkbox_index;
+    item.dataset.todoId = todo.id;
+
+    const timeAgo = formatTimeAgo(todo.created_at);
+    const truncatedText = todo.text.length > 30 ? todo.text.substring(0, 30) + '...' : todo.text;
+
+    item.innerHTML = `
+      <div style="display: flex; gap: 10px; align-items: flex-start; width: 100%;">
+        <span class="todo-dot"></span>
+        <div class="notification-content" style="flex: 1; cursor: pointer;">
+          <div class="notification-text">${escapeHtml(truncatedText)}</div>
+          <div class="notification-meta">${timeAgo}에 작성</div>
+        </div>
+        <button class="todo-dismiss" data-id="${todo.id}" title="무시">✕</button>
+      </div>
+    `;
+    list.appendChild(item);
+  });
+
+  // 공유 메모 알림 렌더링
+  shareNotifications.forEach(notification => {
+    const item = document.createElement('div');
+    item.className = 'notification-item share-notification';
+    item.dataset.notificationId = notification.id;
+    item.dataset.memoId = notification.memo_id || '';
+
+    const timeAgo = formatTimeAgo(notification.created_at);
+    const senderEmail = notification.from_email || '알 수 없음';
+    const truncatedText = notification.text.length > 35 ? notification.text.substring(0, 35) + '...' : notification.text;
+
+    item.innerHTML = `
+      <div style="display: flex; gap: 10px; align-items: flex-start; width: 100%;">
+        <div class="notification-icon share">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>
+        </div>
+        <div class="notification-content" style="flex: 1; cursor: pointer;">
+          <div class="notification-text">${escapeHtml(truncatedText)}</div>
+          <div class="notification-meta">${senderEmail} · ${timeAgo}</div>
+        </div>
+        <button class="share-dismiss" data-id="${notification.id}" title="읽음">✕</button>
+      </div>
+    `;
+    list.appendChild(item);
+  });
+
+  // 이벤트 바인딩 - 협업 초대
   list.querySelectorAll('.invite-accept').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -998,6 +1083,61 @@ function renderNotificationDropdown() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       declineInvite(btn.dataset.id);
+    });
+  });
+
+  // 이벤트 바인딩 - 할일 리마인더
+  list.querySelectorAll('.todo-reminder .notification-content').forEach(content => {
+    content.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const item = content.closest('.todo-reminder');
+      const memoId = parseInt(item.dataset.memoId);
+      const checkboxIndex = parseInt(item.dataset.checkboxIndex);
+
+      // goToTodo 함수 호출 (memo.js에서 전역으로 노출)
+      if (window.goToTodo) {
+        await window.goToTodo(memoId, checkboxIndex);
+      }
+      dropdown.classList.add('hidden');
+    });
+  });
+
+  list.querySelectorAll('.todo-dismiss').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const todoId = parseInt(btn.dataset.id);
+      await window.api.dismissTodoReminder(todoId);
+      renderNotificationDropdown();
+    });
+  });
+
+  // 이벤트 바인딩 - 공유 메모 알림
+  list.querySelectorAll('.share-notification .notification-content').forEach(content => {
+    content.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const item = content.closest('.share-notification');
+      const notificationId = parseInt(item.dataset.notificationId);
+      const memoId = item.dataset.memoId ? parseInt(item.dataset.memoId) : null;
+
+      // 읽음 처리
+      await window.api.markNotificationRead(notificationId);
+
+      // 해당 메모로 이동 (memoId가 있으면)
+      if (memoId && window.goToMemo) {
+        await window.goToMemo(memoId);
+      }
+
+      dropdown.classList.add('hidden');
+      renderNotificationDropdown();
+    });
+  });
+
+  list.querySelectorAll('.share-dismiss').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const notificationId = parseInt(btn.dataset.id);
+      await window.api.markNotificationRead(notificationId);
+      renderNotificationDropdown();
     });
   });
 }
@@ -1011,9 +1151,17 @@ function initInviteBellEvents() {
 
   if (!bellBtn || !dropdown) return;
 
-  bellBtn.addEventListener('click', (e) => {
+  bellBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    dropdown.classList.toggle('hidden');
+    const isHidden = dropdown.classList.contains('hidden');
+
+    if (isHidden) {
+      // 열 때마다 새로 렌더링
+      await renderNotificationDropdown();
+      dropdown.classList.remove('hidden');
+    } else {
+      dropdown.classList.add('hidden');
+    }
   });
 
   // 바깥 클릭 시 닫기
@@ -1058,6 +1206,53 @@ setTimeout(async () => {
     loadInvites();
   }
 }, 500);
+
+// 앱 포커스 시 알림 배지 업데이트 (할일 리마인더)
+let appFocusTimeout = null;
+const APP_FOCUS_DELAY = 3000; // 3초 대기
+
+// 타이핑 중인지 확인
+function isUserTyping() {
+  const editor = document.getElementById('editor');
+  if (!editor) return false;
+  return document.activeElement === editor;
+}
+
+// 앱 포커스 이벤트 처리
+window.api.onAppFocused?.(() => {
+  clearTimeout(appFocusTimeout);
+
+  appFocusTimeout = setTimeout(async () => {
+    // 타이핑 중이면 무시
+    if (isUserTyping()) return;
+
+    // 배지 업데이트만 (드롭다운은 열었을 때 렌더링)
+    try {
+      const hasReminders = await window.api.hasTodoReminders();
+      const hasInvites = inviteState.invites.length > 0;
+
+      // 공유 알림 확인
+      let hasShareNotifications = false;
+      try {
+        const notifications = await window.api.getUnreadNotifications() || [];
+        hasShareNotifications = notifications.some(n => n.type === 'share');
+      } catch (e) {
+        // 무시
+      }
+
+      const badge = document.getElementById('notification-badge');
+
+      if (badge) {
+        if (hasReminders || hasInvites || hasShareNotifications) {
+          badge.classList.remove('hidden');
+        }
+        // 숨기는 건 드롭다운 렌더링 시 처리
+      }
+    } catch (e) {
+      console.error('[Notification] Check reminders error:', e);
+    }
+  }, APP_FOCUS_DELAY);
+});
 
 // 전역 모듈로 노출 (sidebar.js에서 참여자 탭 사용)
 window.collabModule = {

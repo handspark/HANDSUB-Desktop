@@ -37,6 +37,7 @@ const authSuccessListener = createSafeListener('auth-success');
 const authErrorListener = createSafeListener('auth-error');
 const authLogoutListener = createSafeListener('auth-logout');
 const tierUpdatedListener = createSafeListener('tier-updated');
+const appFocusedListener = createSafeListener('app-focused');
 
 // 협업 관련 리스너
 const wsConnectedListener = createSafeListener('ws-connected');
@@ -161,6 +162,13 @@ contextBridge.exposeInMainWorld('api', {
   markAllNotificationsRead: () => ipcRenderer.invoke('notification-mark-all-read'),
   deleteNotification: (id) => ipcRenderer.invoke('notification-delete', id),
 
+  // ===== Todo Tracking API (시간 없는 할일 리마인더) =====
+  getTodoReminders: () => ipcRenderer.invoke('todo-get-reminders'),
+  dismissTodoReminder: (id) => ipcRenderer.invoke('todo-dismiss', id),
+  updateTodoRemindedAt: (id) => ipcRenderer.invoke('todo-update-reminded', id),
+  syncTodoTracking: (memoId, todos) => ipcRenderer.invoke('todo-sync', memoId, todos),
+  hasTodoReminders: () => ipcRenderer.invoke('todo-has-reminders'),
+
   // ===== Legacy (for compatibility) =====
   getByUuid: (uuid) => ipcRenderer.invoke('memo-get-by-uuid', uuid),
 
@@ -204,6 +212,10 @@ contextBridge.exposeInMainWorld('api', {
   // ===== Tier Update (WebSocket) =====
   onTierUpdated: (callback) => tierUpdatedListener.on(callback),
   offTierUpdated: () => tierUpdatedListener.off(),
+
+  // ===== App Focus (할일 리마인더용) =====
+  onAppFocused: (callback) => appFocusedListener.on(callback),
+  offAppFocused: () => appFocusedListener.off(),
 
   // ===== WebSocket 연결 상태 =====
   onWsConnected: (callback) => wsConnectedListener.on(callback),

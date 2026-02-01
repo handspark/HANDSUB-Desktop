@@ -445,6 +445,31 @@ try {
   // 이미 존재하면 무시
 }
 
+// 할일 추적 테이블 (시간 없는 할일 리마인더용)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS todo_tracking (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    memo_id INTEGER NOT NULL,
+    checkbox_index INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    has_time INTEGER DEFAULT 0,
+    is_completed INTEGER DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    last_reminded_at INTEGER DEFAULT 0,
+    remind_count INTEGER DEFAULT 0,
+    dismissed INTEGER DEFAULT 0,
+    FOREIGN KEY (memo_id) REFERENCES memos(id) ON DELETE CASCADE,
+    UNIQUE(memo_id, checkbox_index)
+  );
+`);
+
+// 할일 추적 인덱스
+try {
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_todo_remind ON todo_tracking(is_completed, has_time, last_reminded_at)`);
+} catch (e) {
+  // 이미 존재하면 무시
+}
+
 // snippets 테이블 동기화 컬럼 추가 (마이그레이션)
 const snippetColumns = db.prepare("PRAGMA table_info(snippets)").all().map(c => c.name);
 if (!snippetColumns.includes('synced_at')) {
@@ -462,6 +487,75 @@ if (!snippetColumns.includes('source')) {
 if (!snippetColumns.includes('manifest_ref')) {
   db.exec(`ALTER TABLE snippets ADD COLUMN manifest_ref TEXT`);
 }
+
+// ===== 기존 메모 체크박스 마이그레이션 (todo_tracking) =====
+function migrateExistingTodos() {
+  console.log('[Todo Migration] Function called');
+  try {
+    // 기존 데이터 삭제 후 새로 마이그레이션
+    db.prepare('DELETE FROM todo_tracking').run();
+    console.log('[Todo Migration] Starting migration of existing todos...');
+    const memos = db.prepare('SELECT id, content, created_at FROM memos WHERE content IS NOT NULL').all();
+    console.log('[Todo Migration] Found', memos.length, 'memos');
+    const now = Date.now();
+
+    const insertStmt = db.prepare(`
+      INSERT OR IGNORE INTO todo_tracking (memo_id, checkbox_index, text, has_time, is_completed, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    let totalTodos = 0;
+
+    for (const memo of memos) {
+      if (!memo.content) continue;
+
+      // HTML 태그 제거해서 텍스트 추출
+      const plainText = memo.content
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&');
+
+      const lines = plainText.split('\n');
+      let checkboxIndex = 0;
+
+      for (const line of lines) {
+        const checkboxMatch = line.match(/^(\s*)(☐|☑)\s*(.+)/);
+        if (checkboxMatch) {
+          const isChecked = checkboxMatch[2] === '☑';
+          const todoText = checkboxMatch[3].trim();
+
+          // 시간 패턴 확인 (간단히)
+          const hasTime = /\d{1,2}시|\d{1,2}:\d{2}/.test(todoText) ? 1 : 0;
+
+          // 메모 생성 시간 사용 (없으면 현재 시간)
+          const createdAt = memo.created_at ? new Date(memo.created_at).getTime() : now;
+
+          insertStmt.run(
+            memo.id,
+            checkboxIndex,
+            todoText.substring(0, 200), // 텍스트 길이 제한
+            hasTime,
+            isChecked ? 1 : 0,
+            createdAt
+          );
+
+          checkboxIndex++;
+          totalTodos++;
+        }
+      }
+    }
+
+    console.log(`[Todo Migration] Migrated ${totalTodos} todos from ${memos.length} memos`);
+  } catch (e) {
+    console.error('[Todo Migration] Error:', e);
+  }
+}
+
+// 마이그레이션 실행
+migrateExistingTodos();
 
 // ===== Input Validation Helpers =====
 function isValidId(id) {
@@ -1741,6 +1835,19 @@ function createWindow() {
     if (!app.isQuitting) {
       e.preventDefault();
       win.hide();
+    }
+  });
+
+  // 앱 포커스/표시 시 renderer에 알림 (할일 리마인더용)
+  win.on('focus', () => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('app-focused');
+    }
+  });
+
+  win.on('show', () => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('app-focused');
     }
   });
 }
@@ -3202,6 +3309,135 @@ ipcMain.handle('notification-delete', (_, id) => {
   } catch (e) {
     console.error('[Notification] Delete error:', e);
     return { success: false, error: e.message };
+  }
+});
+
+// ===== 할일 추적 API (시간 없는 할일 리마인더) =====
+
+// 리마인드 설정값
+const TODO_REMIND_CONFIG = {
+  minAgeHours: 0,        // 테스트용: 즉시 (배포 시 3으로 변경)
+  cooldownHours: 8,      // 같은 할일 재알림 간격
+  maxRemindCount: 5,     // 최대 알림 횟수
+  maxDisplayCount: 50,   // 모든 할일 표시
+};
+
+// 리마인드 대상 할일 조회
+ipcMain.handle('todo-get-reminders', () => {
+  try {
+    const now = Date.now();
+    const minAge = now - (TODO_REMIND_CONFIG.minAgeHours * 3600000);
+    const cooldown = now - (TODO_REMIND_CONFIG.cooldownHours * 3600000);
+
+    return db.prepare(`
+      SELECT t.*, m.content as memo_content
+      FROM todo_tracking t
+      JOIN memos m ON t.memo_id = m.id
+      WHERE t.is_completed = 0
+        AND t.has_time = 0
+        AND t.dismissed = 0
+        AND t.created_at <= ?
+        AND t.last_reminded_at <= ?
+        AND t.remind_count < ?
+      ORDER BY t.created_at ASC
+      LIMIT ?
+    `).all(minAge, cooldown, TODO_REMIND_CONFIG.maxRemindCount, TODO_REMIND_CONFIG.maxDisplayCount);
+  } catch (e) {
+    console.error('[Todo] Get reminders error:', e);
+    return [];
+  }
+});
+
+// 할일 무시
+ipcMain.handle('todo-dismiss', (_, id) => {
+  try {
+    db.prepare('UPDATE todo_tracking SET dismissed = 1 WHERE id = ?').run(id);
+    return { success: true };
+  } catch (e) {
+    console.error('[Todo] Dismiss error:', e);
+    return { success: false, error: e.message };
+  }
+});
+
+// 알림 표시됨 기록
+ipcMain.handle('todo-update-reminded', (_, id) => {
+  try {
+    const now = Date.now();
+    db.prepare(`
+      UPDATE todo_tracking
+      SET last_reminded_at = ?, remind_count = remind_count + 1
+      WHERE id = ?
+    `).run(now, id);
+    return { success: true };
+  } catch (e) {
+    console.error('[Todo] Update reminded error:', e);
+    return { success: false, error: e.message };
+  }
+});
+
+// 할일 동기화 (메모 저장 시 호출)
+ipcMain.handle('todo-sync', (_, memoId, todos) => {
+  try {
+    const now = Date.now();
+
+    // 기존 할일 조회 (텍스트 기준 매칭용)
+    const existingTodos = db.prepare('SELECT * FROM todo_tracking WHERE memo_id = ?').all(memoId);
+    const existingMap = new Map(existingTodos.map(t => [t.text, t]));
+
+    // 기존 할일 모두 삭제 후 새로 삽입 (checkbox_index가 변경될 수 있으므로)
+    db.prepare('DELETE FROM todo_tracking WHERE memo_id = ?').run(memoId);
+
+    const insertStmt = db.prepare(`
+      INSERT INTO todo_tracking (memo_id, checkbox_index, text, has_time, is_completed, created_at, last_reminded_at, remind_count, dismissed)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const todo of todos) {
+      // 기존 할일과 텍스트가 같으면 상태 유지
+      const existing = existingMap.get(todo.text);
+
+      insertStmt.run(
+        memoId,
+        todo.checkboxIndex,
+        todo.text,
+        todo.hasTime,
+        todo.isCompleted,
+        existing?.created_at || now,
+        existing?.last_reminded_at || 0,
+        existing?.remind_count || 0,
+        existing?.dismissed || 0
+      );
+    }
+
+    return { success: true };
+  } catch (e) {
+    console.error('[Todo] Sync error:', e);
+    return { success: false, error: e.message };
+  }
+});
+
+// 할일 리마인더 유무 확인 (배지 표시용)
+ipcMain.handle('todo-has-reminders', () => {
+  try {
+    const now = Date.now();
+    const minAge = now - (TODO_REMIND_CONFIG.minAgeHours * 3600000);
+    const cooldown = now - (TODO_REMIND_CONFIG.cooldownHours * 3600000);
+
+    const result = db.prepare(`
+      SELECT COUNT(*) as count
+      FROM todo_tracking
+      WHERE is_completed = 0
+        AND has_time = 0
+        AND dismissed = 0
+        AND created_at <= ?
+        AND last_reminded_at <= ?
+        AND remind_count < ?
+    `).get(minAge, cooldown, TODO_REMIND_CONFIG.maxRemindCount);
+
+    return result.count > 0;
+  } catch (e) {
+    console.error('[Todo] Has reminders error:', e);
+    return false;
   }
 });
 

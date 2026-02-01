@@ -2031,19 +2031,12 @@ html, body {
 
 .notification-badge {
   position: absolute;
-  top: 2px;
-  right: 2px;
+  top: 3px;
+  right: 3px;
+  width: 8px;
+  height: 8px;
   background: #FF3B30;
-  color: white;
-  font-size: 9px;
-  font-weight: 600;
-  min-width: 14px;
-  height: 14px;
-  border-radius: 7px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 3px;
+  border-radius: 50%;
 }
 
 .notification-badge.hidden {
@@ -2111,28 +2104,19 @@ html, body {
 }
 
 .notification-item .notification-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  opacity: 0.5;
 }
 
 .notification-item .notification-icon svg {
-  width: 14px;
-  height: 14px;
-}
-
-.notification-item .notification-icon.invite {
-  background: #007AFF;
-  color: white;
-}
-
-.notification-item .notification-icon.reminder {
-  background: #FF9500;
-  color: white;
+  width: 16px;
+  height: 16px;
+  fill: var(--text-color);
 }
 
 .notification-item .notification-content {
@@ -2188,4 +2172,80 @@ html, body {
 
 .notification-item .btn-primary:hover {
   background: #0066DD;
+}
+
+/* ===== Todo Reminder Styles ===== */
+.notification-item.todo-reminder {
+  cursor: pointer;
+}
+
+.notification-item .todo-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #888;
+  flex-shrink: 0;
+  margin-top: 7px;
+}
+
+.notification-item.todo-reminder .todo-dismiss {
+  background: none;
+  border: none;
+  color: var(--memo-date-color);
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+}
+
+.notification-item.todo-reminder:hover .todo-dismiss {
+  opacity: 0.6;
+}
+
+.notification-item.todo-reminder .todo-dismiss:hover {
+  opacity: 1;
+}
+
+/* 공유 알림 스타일 */
+.notification-item.share-notification {
+  cursor: pointer;
+}
+
+.notification-item.share-notification .share-dismiss {
+  background: none;
+  border: none;
+  color: var(--memo-date-color);
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+}
+
+.notification-item.share-notification:hover .share-dismiss {
+  opacity: 0.6;
+}
+
+.notification-item.share-notification .share-dismiss:hover {
+  opacity: 1;
+}
+
+/* 체크박스 하이라이트 효과 */
+.highlight-todo {
+  animation: todoHighlight 2s ease-out;
+  border-radius: 4px;
+}
+
+@keyframes todoHighlight {
+  0% {
+    background: rgba(255, 149, 0, 0.4);
+    box-shadow: 0 0 0 2px rgba(255, 149, 0, 0.3);
+  }
+  100% {
+    background: transparent;
+    box-shadow: none;
+  }
 }

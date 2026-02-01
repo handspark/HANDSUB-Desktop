@@ -5,7 +5,7 @@
 import { elements, memoState, timers, snippetState } from './state.js';
 import { getEditorContent, setEditorContent, getPlainText, getPlainTextFromHtml, stripInlineHandlers, applyStrikethrough, highlightTodoTimes } from './editor.js';
 import { clearLinkPreviews, processLinksInEditor } from './linkPreview.js';
-import { parseAllTodoTimes } from './timeParser.js';
+import { parseAllTodoTimes, parseTime } from './timeParser.js';
 import { startCollaboration, stopCollaboration, isCollaborating } from './collaboration.js';
 
 const { editor, sidebar } = elements;
@@ -178,13 +178,13 @@ export async function saveCurrentContent() {
   scheduleReminderSync(content, memoState.currentMemo?.id);
 }
 
-// 리마인더 등록 디바운싱 (2초 대기)
+// 리마인더 등록 디바운싱 (0.5초 대기)
 let reminderSyncTimeout = null;
 function scheduleReminderSync(content, memoId) {
   clearTimeout(reminderSyncTimeout);
   reminderSyncTimeout = setTimeout(() => {
     syncReminders(content, memoId);
-  }, 2000);
+  }, 500);
 }
 
 // 리마인더 동기화 (체크박스 시간 파싱 → 리마인더 등록)
@@ -193,26 +193,53 @@ async function syncReminders(content, memoId) {
 
   try {
     const plainText = getPlainTextFromHtml(content);
-    const todoTimes = parseAllTodoTimes(plainText);
+    const lines = plainText.split('\n');
+
+    // 모든 체크박스 파싱
+    const allTodos = [];
+    let checkboxIndex = 0;
+
+    lines.forEach(line => {
+      const checkboxMatch = line.match(/^(\s*)(☐|☑)\s*(.+)/);
+      if (checkboxMatch) {
+        const isChecked = checkboxMatch[2] === '☑';
+        const todoText = checkboxMatch[3].trim();
+        const timeInfo = parseTime(todoText);
+
+        allTodos.push({
+          checkboxIndex,
+          text: timeInfo?.cleanText || todoText,
+          hasTime: timeInfo ? 1 : 0,
+          isCompleted: isChecked ? 1 : 0,
+          timeInfo
+        });
+
+        checkboxIndex++;
+      }
+    });
+
+    // 할일 추적 동기화 (시간 없는 할일 리마인더용)
+    await window.api.syncTodoTracking(memoId, allTodos);
 
     // 해당 메모의 모든 미완료 리마인더 삭제 (깔끔하게 초기화)
     await window.api.deleteReminderByMemo(memoId);
 
-    // 미완료 체크박스만 리마인더 등록
-    const uncompletedTodos = todoTimes.filter(t => !t.isChecked);
+    // 시간이 있는 미완료 체크박스만 시간 기반 리마인더 등록
+    const timedTodos = allTodos.filter(t => t.hasTime && !t.isCompleted && t.timeInfo);
 
-    for (const todo of uncompletedTodos) {
-      const todoText = todo.cleanText;
+    for (const todo of timedTodos) {
+      const todoText = todo.text;
       if (!todoText || todoText.length < 2) continue;
 
-      const dayOffset = todo.dayOffset || 0;
+      const timeInfo = todo.timeInfo;
+      const dayOffset = timeInfo.dayOffset || 0;
       const now = new Date();
       let targetDate = new Date(
         now.getFullYear(),
         now.getMonth(),
         now.getDate() + dayOffset,
-        todo.hour24,
-        todo.minute
+        timeInfo.hour24,
+        timeInfo.minute
       );
       let remindAt = targetDate.getTime();
 
@@ -234,6 +261,71 @@ async function syncReminders(content, memoId) {
     console.error('[Reminder] Sync error:', e);
   }
 }
+
+// 할일로 이동 (알림 클릭 시)
+export async function goToTodo(memoId, checkboxIndex) {
+  try {
+    // 1. 메모 목록에서 해당 메모 인덱스 찾기
+    const memos = await window.api.getAll();
+    const memoIndex = memos.findIndex(m => m.id === memoId);
+
+    if (memoIndex === -1) {
+      console.warn('[Todo] Memo not found:', memoId);
+      return;
+    }
+
+    // 2. 메모 로드
+    await loadMemo(memoIndex);
+
+    // 3. 약간의 딜레이 후 체크박스 찾기 & 스크롤
+    setTimeout(() => {
+      const checkboxes = editor.querySelectorAll('.checkbox');
+
+      if (checkboxes[checkboxIndex]) {
+        const target = checkboxes[checkboxIndex];
+
+        // 스크롤
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        // 하이라이트 효과 (부모 div에 적용)
+        const parent = target.closest('div') || target.parentElement;
+        if (parent) {
+          parent.classList.add('highlight-todo');
+          setTimeout(() => {
+            parent.classList.remove('highlight-todo');
+          }, 2000);
+        }
+      }
+    }, 150);
+  } catch (e) {
+    console.error('[Todo] Go to todo error:', e);
+  }
+}
+
+// 전역으로 노출 (collaboration.js에서 사용)
+window.goToTodo = goToTodo;
+
+// 메모로 이동 (공유 알림 클릭 시)
+export async function goToMemo(memoId) {
+  try {
+    // 메모 목록에서 해당 메모 인덱스 찾기
+    const memos = await window.api.getAll();
+    const memoIndex = memos.findIndex(m => m.id === memoId);
+
+    if (memoIndex === -1) {
+      console.warn('[Memo] Memo not found:', memoId);
+      return;
+    }
+
+    // 메모 로드
+    await loadMemo(memoIndex);
+  } catch (e) {
+    console.error('[Memo] Go to memo error:', e);
+  }
+}
+
+// 전역으로 노출
+window.goToMemo = goToMemo;
 
 export async function cleanupOnClose() {
   try {
