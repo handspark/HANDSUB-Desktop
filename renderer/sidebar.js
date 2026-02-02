@@ -43,16 +43,21 @@ export function setLoadMemoFn(fn) {
 // ===== 에디터 위치 업데이트 =====
 
 export function updateEditorPosition() {
+  const titlebarCenter = document.querySelector('.titlebar-center');
+
   if (sidebar.classList.contains('open')) {
     const left = (sidebarState.sidebarWidth + 20) + 'px';
     const toolLogLeft = (sidebarState.sidebarWidth + 12) + 'px';
     editor.style.left = left;
     linkPreviewsContainer.style.left = left;
     if (toolLog) toolLog.style.left = toolLogLeft;
+    // 사이드바 너비에 따라 날짜도 에디터 영역 가운데로
+    if (titlebarCenter) titlebarCenter.style.left = left;
   } else {
     editor.style.left = '20px';
     linkPreviewsContainer.style.left = '20px';
     if (toolLog) toolLog.style.left = '12px';
+    if (titlebarCenter) titlebarCenter.style.left = '20px';
   }
 }
 

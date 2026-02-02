@@ -78,12 +78,20 @@ html, body {
 
 .titlebar-center {
   position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 45px;
+  left: 20px;
+  right: 10px;
+  text-align: center;
   font-size: 11px;
   color: var(--memo-date-color);
   pointer-events: none;
   white-space: nowrap;
+  transition: left 0.2s ease, opacity 0.2s ease;
+  z-index: 5;
+}
+
+.titlebar-center.hidden {
+  opacity: 0;
 }
 
 .titlebar-left button,
@@ -134,6 +142,7 @@ html, body {
   right: 10px;
   bottom: 10px;
   padding: 0;
+  padding-top: 20px;
   padding-right: 14px;
   border: none;
   outline: none;

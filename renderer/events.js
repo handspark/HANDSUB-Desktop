@@ -408,12 +408,23 @@ export function initMemoNavigation() {
 // ===== 스크롤바 표시 =====
 
 export function initScrollVisibility() {
+  const titlebarCenter = document.querySelector('.titlebar-center');
+
   editor.addEventListener('scroll', () => {
     editor.classList.add('scrolling');
     clearTimeout(timers.editorScrollTimeout);
     timers.editorScrollTimeout = setTimeout(() => {
       editor.classList.remove('scrolling');
     }, 1000);
+
+    // 스크롤하면 날짜 숨김, 맨 위면 표시
+    if (titlebarCenter) {
+      if (editor.scrollTop > 10) {
+        titlebarCenter.classList.add('hidden');
+      } else {
+        titlebarCenter.classList.remove('hidden');
+      }
+    }
   });
 
   memoList.addEventListener('scroll', () => {
