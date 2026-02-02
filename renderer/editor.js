@@ -190,6 +190,26 @@ export function processCheckboxes() {
   }
 }
 
+// ===== 첫 줄 제목 스타일 체크 =====
+
+export function updateTitleClass() {
+  const text = editor.innerText || '';
+  const firstLine = text.split('\n')[0].trim();
+
+  // []체크박스, /스니펫, ☐☑ 체크박스로 시작하면 제목 아님
+  const isNotTitle = firstLine.startsWith('[') ||
+                     firstLine.startsWith('/') ||
+                     firstLine.startsWith('☐') ||
+                     firstLine.startsWith('☑') ||
+                     firstLine === '';
+
+  if (isNotTitle) {
+    editor.classList.remove('has-title');
+  } else {
+    editor.classList.add('has-title');
+  }
+}
+
 // ===== 체크된 항목 취소선 적용 =====
 
 export function applyStrikethrough() {

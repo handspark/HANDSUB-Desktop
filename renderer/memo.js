@@ -3,7 +3,7 @@
  */
 
 import { elements, memoState, timers, snippetState } from './state.js';
-import { getEditorContent, setEditorContent, getPlainText, getPlainTextFromHtml, stripInlineHandlers, applyStrikethrough, highlightTodoTimes } from './editor.js';
+import { getEditorContent, setEditorContent, getPlainText, getPlainTextFromHtml, stripInlineHandlers, applyStrikethrough, highlightTodoTimes, updateTitleClass } from './editor.js';
 import { clearLinkPreviews, processLinksInEditor } from './linkPreview.js';
 import { parseAllTodoTimes, parseTime } from './timeParser.js';
 import { startCollaboration, stopCollaboration, isCollaborating } from './collaboration.js';
@@ -101,6 +101,9 @@ export async function loadMemo(index) {
 
     // 할일 시간 하이라이트
     highlightTodoTimes();
+
+    // 첫 줄 제목 스타일 체크
+    updateTitleClass();
 
     // 공유 메모면 자동으로 협업 시작
     await tryAutoCollaboration(memoState.currentMemo);

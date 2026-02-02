@@ -162,6 +162,12 @@ html, body {
   background: light-dark(rgba(0,0,0,0.15), rgba(255,255,255,0.2));
 }
 
+/* 첫 번째 줄 제목 스타일 (체크박스/스니펫 제외) */
+#editor.has-title::first-line {
+  font-weight: bold;
+  font-size: 1.3em;
+}
+
 /* 완료된 할일 취소선 */
 .completed-task {
   text-decoration: line-through;

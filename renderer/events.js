@@ -3,7 +3,7 @@
  */
 
 import { elements, memoState, timers, snippetState } from './state.js';
-import { getPlainText, insertTextAtCursor, processCheckboxes, setEditorContent, applyStrikethrough, highlightTodoTimes } from './editor.js';
+import { getPlainText, insertTextAtCursor, processCheckboxes, setEditorContent, applyStrikethrough, highlightTodoTimes, updateTitleClass } from './editor.js';
 import { processLinksInEditor, clearLinkPreviews } from './linkPreview.js';
 import { loadMemo, saveCurrentContent, cleanupOnClose, triggerSave, updateStatusbar } from './memo.js';
 import { toggleSidebar, renderMemoList, setLoadMemoFn, updateEditorPosition } from './sidebar.js';
@@ -41,6 +41,7 @@ export function initEditorInputEvents() {
     triggerSave();
     processLinksInEditor();
     processCheckboxes();
+    updateTitleClass();
     // 시간 하이라이트는 blur 시에만 적용 (커서 방해 방지)
   });
 
@@ -375,9 +376,9 @@ export function initMemoNavigation() {
     const isSidebarOpen = sidebar.classList.contains('open');
     const isCmdPressed = e.metaKey || e.ctrlKey;
 
-    const shouldNavigate = isSidebarOpen
-      ? (document.activeElement !== editor)
-      : isCmdPressed;
+    // Cmd/Ctrl + 화살표면 항상 메모 탐색 (사이드바 열림/닫힘 무관)
+    // 사이드바 열린 상태에서 에디터 밖 포커스면 화살표만으로도 탐색
+    const shouldNavigate = isCmdPressed || (isSidebarOpen && document.activeElement !== editor);
 
     if (!shouldNavigate) return;
 
