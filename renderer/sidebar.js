@@ -147,7 +147,20 @@ export function renderMemoList() {
     const contentDiv = document.createElement('div');
     contentDiv.className = 'memo-item-content';
 
-    const firstLine = plainText.trim().split('\n')[0] || '';
+    // HTML에서 첫 줄만 추출 (br, div 태그 기준)
+    const getFirstLine = (html) => {
+      if (!html) return '';
+      // 첫 번째 줄바꿈 태그 전까지만 추출
+      const match = html.match(/^([^<]*?)(?:<br|<\/div|<div|$)/i);
+      if (match && match[1]) {
+        // HTML 태그 제거
+        const temp = document.createElement('div');
+        temp.innerHTML = match[1];
+        return (temp.textContent || '').trim();
+      }
+      return plainText.trim().split(/[\n\r]/)[0] || '';
+    };
+    const firstLine = getFirstLine(memo.content);
     const preview = firstLine.substring(0, 30) || '(빈 메모)';
     const dateStr = formatDate(memo.updated_at);
 
