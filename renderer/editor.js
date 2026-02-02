@@ -131,12 +131,23 @@ export function insertTextAtCursor(text) {
   const range = selection.getRangeAt(0);
   range.deleteContents();
 
-  const textNode = document.createTextNode(text);
-  range.insertNode(textNode);
+  // \n을 <br>로 변환하여 일관된 줄바꿈 처리
+  const lines = text.split('\n');
+  const fragment = document.createDocumentFragment();
 
-  // 커서를 텍스트 끝으로 이동
-  range.setStartAfter(textNode);
-  range.setEndAfter(textNode);
+  lines.forEach((line, i) => {
+    if (i > 0) {
+      fragment.appendChild(document.createElement('br'));
+    }
+    if (line) {
+      fragment.appendChild(document.createTextNode(line));
+    }
+  });
+
+  range.insertNode(fragment);
+
+  // 커서를 끝으로 이동
+  range.collapse(false);
   selection.removeAllRanges();
   selection.addRange(range);
 }
