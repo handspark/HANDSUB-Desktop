@@ -739,25 +739,45 @@ async function sendMemoByEmail(email) {
     const token = await window.api.authGetToken();
     const syncServer = await window.api.getSyncServer();
 
-    // 세션 ID가 없으면 먼저 생성
+    // 세션 ID가 없으면 먼저 생성하고 협업 시작
     if (!sharePopupSessionId) {
-      const sessionRes = await fetch(`${syncServer}/api/v2/collab/session`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          memoUuid: sharePopupMemo.uuid,
-          title: sharePopupMemo.content?.split('\n')[0]?.substring(0, 100) || 'Untitled'
-        })
-      });
+      // 협업 모듈 사용하여 세션 생성 및 WebSocket 참가
+      const { startCollaboration, collabState } = window.collabModule || {};
 
-      if (sessionRes.ok) {
-        const sessionData = await sessionRes.json();
-        sharePopupSessionId = sessionData.sessionId;
+      if (startCollaboration && !collabState?.isCollaborating) {
+        console.log('[Share] Starting collaboration for host...');
+        const collabResult = await startCollaboration(sharePopupMemo.uuid, sharePopupMemo.content || '');
+
+        if (collabResult.success) {
+          sharePopupSessionId = collabResult.sessionId;
+          console.log('[Share] Host joined collaboration session:', sharePopupSessionId);
+        } else {
+          throw new Error(collabResult.error || '협업 세션 시작 실패');
+        }
+      } else if (collabState?.sessionId) {
+        // 이미 협업 중이면 해당 세션 ID 사용
+        sharePopupSessionId = collabState.sessionId;
+        console.log('[Share] Using existing collaboration session:', sharePopupSessionId);
       } else {
-        throw new Error('세션 생성 실패');
+        // 협업 모듈이 없으면 REST API로 세션만 생성 (fallback)
+        const sessionRes = await fetch(`${syncServer}/api/v2/collab/session`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            memoUuid: sharePopupMemo.uuid,
+            title: sharePopupMemo.content?.split('\n')[0]?.substring(0, 100) || 'Untitled'
+          })
+        });
+
+        if (sessionRes.ok) {
+          const sessionData = await sessionRes.json();
+          sharePopupSessionId = sessionData.sessionId;
+        } else {
+          throw new Error('세션 생성 실패');
+        }
       }
     }
 

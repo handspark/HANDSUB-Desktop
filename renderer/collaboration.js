@@ -256,40 +256,47 @@ export async function startCollaboration(memoUuid, content) {
 
     // 방장 여부 저장
     collabState.isHost = isOwner;
-
-    // WebSocket 세션 참가
-    const result = await window.api.collabStart(sessionId, memoUuid);
-    if (!result.success) {
-      return { success: false, error: result.error };
-    }
+    collabState.sessionId = sessionId;
+    collabState.isCollaborating = true;
 
     // 초기 줄 상태 설정
     collabState.lines = parseEditorToLines();
     collabState.lastLines = JSON.parse(JSON.stringify(collabState.lines));
 
-    collabState.sessionId = sessionId;
-    collabState.isCollaborating = true;
+    // 이벤트 리스너 먼저 설정 (중요: collabStart 전에 설정해야 collab-joined 메시지 수신 가능)
+    setupCollabEventListeners();
+
+    // WebSocket 세션 참가
+    const result = await window.api.collabStart(sessionId, memoUuid);
+    if (!result.success) {
+      // 실패 시 정리
+      removeCollabEventListeners();
+      collabState.sessionId = null;
+      collabState.isCollaborating = false;
+      return { success: false, error: result.error };
+    }
 
     // 호스트면 초기 상태 전송 (레거시)
     if (isOwner && !existing) {
       sendFullSync();
     }
 
-    setupCollabEventListeners();
-
     // 가벼운 협업 초기화
     initLiteCollab(sessionId, content);
 
     // 호스트가 새 세션 시작 → 서버에 초기 내용 저장
     if (isOwner && !existing && content) {
-      console.log('[Collab] Host saving initial content to server...');
+      console.log('[Collab] Host saving initial content to server...', { contentLength: content.length });
       await saveInitialContent(sessionId, content);
     }
 
     // 참여자(호스트 아님)면 서버에서 최신 내용 가져오기
+    console.log('[Collab] Checking if should fetch server content - isOwner:', isOwner, 'existing:', existing);
     if (!isOwner || existing) {
       console.log('[Collab] Fetching server content for participant...');
       await fetchAndApplyServerContent(sessionId);
+    } else {
+      console.log('[Collab] Skipping server content fetch (is new owner)');
     }
 
     console.log('[Collab] Session started:', sessionId, 'lines:', collabState.lines.length);
@@ -932,14 +939,16 @@ export async function acceptInvite(inviteId) {
           // 메모가 없으면 새로 생성
           if (!found) {
             console.log('[Collab] Memo not found locally, creating new memo for collaboration');
+            console.log('[Collab] Server returned title:', result.title);
             // 새 메모 생성 (협업용)
             const newMemo = await window.api.create();
             if (newMemo) {
               // UUID 업데이트
               await window.api.updateUuid(newMemo.id, result.memoUuid);
-              // 제목 설정
-              const title = result.title || '협업 메모';
-              await window.api.update(newMemo.id, title);
+              // 제목 설정 (서버에서 내용을 가져올 때까지 임시)
+              const tempContent = result.title || '로딩 중...';
+              console.log('[Collab] Setting temp content:', tempContent);
+              await window.api.update(newMemo.id, tempContent);
               // 새 메모 열기
               if (window.goToMemoByUuid) {
                 found = await window.goToMemoByUuid(result.memoUuid);
@@ -1372,9 +1381,11 @@ async function saveInitialContent(sessionId, content) {
  */
 async function fetchAndApplyServerContent(sessionId) {
   try {
+    console.log('[Collab-Lite] Fetching content for session:', sessionId);
     const result = await window.api.collabGetContent(sessionId);
+    console.log('[Collab-Lite] Server response:', { hasContent: result.content !== undefined, version: result.version, contentLength: result.content?.length });
 
-    if (result.content !== undefined) {
+    if (result.content !== undefined && result.content.length > 0) {
       const editor = elements.editor;
       if (editor) {
         editor.innerText = result.content;
@@ -1388,10 +1399,18 @@ async function fetchAndApplyServerContent(sessionId) {
         collabState.lines = parseEditorToLines();
         collabState.lastLines = JSON.parse(JSON.stringify(collabState.lines));
 
-        console.log('[Collab-Lite] Applied server content, version:', result.version);
+        // 로컬 메모에도 저장 (중요!)
+        if (memoState.currentMemo?.id) {
+          await window.api.update(memoState.currentMemo.id, result.content);
+          memoState.currentMemo.content = result.content;
+          memoState.lastSavedContent = result.content;
+          console.log('[Collab-Lite] Saved server content to local memo:', memoState.currentMemo.id);
+        }
+
+        console.log('[Collab-Lite] Applied server content, version:', result.version, 'length:', result.content.length);
       }
     } else {
-      console.log('[Collab-Lite] No server content yet');
+      console.log('[Collab-Lite] No server content yet or empty');
     }
   } catch (e) {
     console.error('[Collab-Lite] Fetch server content error:', e);
@@ -1786,6 +1805,10 @@ window.collabModule = {
   declineInvite,
   inviteState,
   initInviteBellEvents,
+  // 협업 세션 시작/종료
+  startCollaboration,
+  stopCollaboration,
+  isCollaborating,
   // 가벼운 협업
   initLiteCollab,
   cleanupLiteCollab,
