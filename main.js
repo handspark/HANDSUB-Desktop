@@ -755,8 +755,10 @@ ipcMain.handle('cloud-get-local-count', () => {
 // 클라우드 메모 개수 조회 (서버에서)
 ipcMain.handle('cloud-get-count', async () => {
   try {
-    const auth = getStoredAuth();
-    if (!auth?.accessToken) return { count: 0 };
+    // 토큰 유효성 확인 및 갱신
+    const tokenResult = await ensureValidToken();
+    if (!tokenResult.valid) return { count: 0 };
+    const auth = tokenResult.auth;
 
     const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
     const response = await fetch(`${serverUrl}/api/v2/cloud/memos/count`, {
@@ -774,8 +776,10 @@ ipcMain.handle('cloud-get-count', async () => {
 // 클라우드 메모 목록 조회 (서버에서)
 ipcMain.handle('cloud-get-memos', async () => {
   try {
-    const auth = getStoredAuth();
-    if (!auth?.accessToken) return { memos: [] };
+    // 토큰 유효성 확인 및 갱신
+    const tokenResult = await ensureValidToken();
+    if (!tokenResult.valid) return { memos: [] };
+    const auth = tokenResult.auth;
 
     const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
     const response = await fetch(`${serverUrl}/api/v2/cloud/memos`, {
@@ -793,8 +797,13 @@ ipcMain.handle('cloud-get-memos', async () => {
 // 메모를 클라우드에 동기화
 ipcMain.handle('cloud-sync-memo', async (_, memoId) => {
   try {
-    const auth = getStoredAuth();
-    if (!auth?.accessToken || auth.user?.tier !== 'pro') {
+    // 토큰 유효성 확인 및 갱신
+    const tokenResult = await ensureValidToken();
+    if (!tokenResult.valid) {
+      return { success: false, error: tokenResult.error };
+    }
+    const auth = tokenResult.auth;
+    if (auth.user?.tier !== 'pro' && auth.user?.tier !== 'lifetime') {
       return { success: false, error: 'Pro subscription required' };
     }
 
@@ -849,8 +858,13 @@ ipcMain.handle('cloud-sync-memo', async (_, memoId) => {
 // 모든 로컬 메모를 클라우드에 업로드 (동기화 활성화 시)
 ipcMain.handle('cloud-upload-all-memos', async () => {
   try {
-    const auth = getStoredAuth();
-    if (!auth?.accessToken || auth.user?.tier !== 'pro') {
+    // 토큰 유효성 확인 및 갱신
+    const tokenResult = await ensureValidToken();
+    if (!tokenResult.valid) {
+      return { success: false, error: tokenResult.error };
+    }
+    const auth = tokenResult.auth;
+    if (auth.user?.tier !== 'pro' && auth.user?.tier !== 'lifetime') {
       return { success: false, error: 'Pro subscription required' };
     }
 
@@ -909,10 +923,12 @@ ipcMain.handle('cloud-upload-all-memos', async () => {
 // 클라우드 메모를 로컬에 가져오기 (로그인 시 - 모두 합치기)
 ipcMain.handle('cloud-import-memos', async (_, mode) => {
   try {
-    const auth = getStoredAuth();
-    if (!auth?.accessToken) {
-      return { success: false, error: 'Not authenticated' };
+    // 토큰 유효성 확인 및 갱신
+    const tokenResult = await ensureValidToken();
+    if (!tokenResult.valid) {
+      return { success: false, error: tokenResult.error };
     }
+    const auth = tokenResult.auth;
 
     // mode: 'merge' (모두 합치기) | 'replace' (클라우드만 사용)
     if (mode === 'replace') {
@@ -980,10 +996,12 @@ ipcMain.handle('cloud-import-memos', async (_, mode) => {
 // 클라우드 메모 삭제 (서버에서)
 ipcMain.handle('cloud-delete-memo', async (_, memoUuid) => {
   try {
-    const auth = getStoredAuth();
-    if (!auth?.accessToken) {
-      return { success: false, error: 'Not authenticated' };
+    // 토큰 유효성 확인 및 갱신
+    const tokenResult = await ensureValidToken();
+    if (!tokenResult.valid) {
+      return { success: false, error: tokenResult.error };
     }
+    const auth = tokenResult.auth;
 
     const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
     const response = await fetch(`${serverUrl}/api/v2/cloud/memo/${memoUuid}`, {
@@ -2641,7 +2659,7 @@ async function refreshAuthTokens() {
         console.log('[Auth] Token refreshed successfully');
         return response;
       }
-      console.log('[Auth] Refresh failed - no accessToken in response');
+      console.log('[Auth] Refresh failed - server response:', JSON.stringify(response));
       return null;
     } catch (e) {
       console.error('[Auth] Refresh failed:', e);
@@ -2659,6 +2677,39 @@ async function refreshAuthTokens() {
 function isPro() {
   const auth = getStoredAuth();
   return auth?.user?.tier === 'pro' || auth?.user?.tier === 'lifetime';
+}
+
+// 클라우드 API 호출 전 토큰 확인 및 갱신
+async function ensureValidToken() {
+  const auth = getStoredAuth();
+  if (!auth?.accessToken) {
+    return { valid: false, error: 'not_authenticated' };
+  }
+
+  // JWT 만료 시간 확인 (5분 여유)
+  try {
+    const payload = JSON.parse(Buffer.from(auth.accessToken.split('.')[1], 'base64').toString());
+    const expiresAt = payload.exp * 1000;
+    const now = Date.now();
+
+    if (expiresAt - now < 5 * 60 * 1000) {
+      console.log('[Auth] Token expiring soon, refreshing...');
+      const refreshed = await refreshAuthTokens();
+      if (!refreshed) {
+        return { valid: false, error: 'refresh_failed' };
+      }
+      return { valid: true, auth: getStoredAuth() };
+    }
+  } catch (e) {
+    console.log('[Auth] Could not parse token, attempting refresh...');
+    const refreshed = await refreshAuthTokens();
+    if (!refreshed) {
+      return { valid: false, error: 'refresh_failed' };
+    }
+    return { valid: true, auth: getStoredAuth() };
+  }
+
+  return { valid: true, auth };
 }
 
 // ===== SyncManager - 로컬-퍼스트 동기화 모듈 =====
@@ -4541,21 +4592,104 @@ async function fetchWithAuth(url, options = {}) {
 }
 
 // ===== Auth IPC Handlers =====
+// 로그인 폴링 타이머
+let loginPollTimer = null;
+
 ipcMain.handle('auth-login', async () => {
   // state 생성 (CSRF 방지, 5분 만료)
   pendingAuthState = crypto.randomBytes(16).toString('hex');
   pendingAuthStateExpires = Date.now() + 5 * 60 * 1000; // 5분
 
   const wpSiteUrl = config.wpSiteUrl || 'https://handsub.com';
-  const redirectUri = 'handsub://auth/callback';
+  const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
+
+  // 개발 모드에서는 웹 콜백 사용 (handsub:// 프로토콜이 작동하지 않을 수 있음)
+  const redirectUri = process.defaultApp
+    ? `${serverUrl}/auth/callback`
+    : 'handsub://auth/callback';
 
   const loginUrl = `${wpSiteUrl}/?handsub_login=1&redirect_uri=${encodeURIComponent(redirectUri)}&state=${pendingAuthState}`;
 
   console.log('[Auth] Opening login URL, state:', pendingAuthState.substring(0, 8) + '...');
+  console.log('[Auth] Redirect URI:', redirectUri);
   shell.openExternal(loginUrl);
+
+  // 개발 모드에서는 폴링 시작
+  if (process.defaultApp) {
+    startLoginPolling(pendingAuthState);
+  }
 
   return { state: pendingAuthState };
 });
+
+// 로그인 폴링 (개발 모드용)
+function startLoginPolling(state) {
+  // 기존 타이머 정리
+  if (loginPollTimer) {
+    clearInterval(loginPollTimer);
+  }
+
+  const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
+  let attempts = 0;
+  const maxAttempts = 60; // 최대 60회 (5분)
+
+  console.log('[Auth] Starting login polling...');
+
+  loginPollTimer = setInterval(async () => {
+    attempts++;
+
+    if (attempts > maxAttempts) {
+      clearInterval(loginPollTimer);
+      loginPollTimer = null;
+      console.log('[Auth] Login polling timeout');
+      BrowserWindow.getAllWindows().forEach(w => {
+        if (!w.isDestroyed()) {
+          w.webContents.send('auth-error', { error: 'timeout', message: '로그인 시간이 초과되었습니다' });
+        }
+      });
+      return;
+    }
+
+    try {
+      const response = await fetchJson(`${serverUrl}/api/auth/poll/${state}`);
+
+      if (response.status === 'complete') {
+        clearInterval(loginPollTimer);
+        loginPollTimer = null;
+
+        // 토큰 저장
+        await saveAuthTokens(response);
+        pendingAuthState = null;
+        pendingAuthStateExpires = null;
+
+        console.log('[Auth] Login successful via polling:', response.user?.email);
+
+        // 모든 창에 로그인 성공 알림
+        BrowserWindow.getAllWindows().forEach(w => {
+          if (!w.isDestroyed()) {
+            w.webContents.send('auth-success', { user: response.user });
+            w.webContents.send('memos-updated');
+          }
+        });
+
+        // WebSocket 연결 시작
+        connectWebSocket();
+      } else if (response.status === 'expired') {
+        clearInterval(loginPollTimer);
+        loginPollTimer = null;
+        console.log('[Auth] Login state expired');
+        BrowserWindow.getAllWindows().forEach(w => {
+          if (!w.isDestroyed()) {
+            w.webContents.send('auth-error', { error: 'expired', message: '로그인이 만료되었습니다' });
+          }
+        });
+      }
+      // status === 'pending'이면 계속 폴링
+    } catch (e) {
+      console.error('[Auth] Polling error:', e.message);
+    }
+  }, 5000); // 5초마다 폴링
+}
 
 ipcMain.handle('auth-get-user', () => {
   return getStoredUser();
@@ -5414,11 +5548,13 @@ function migrateToolConnectionsToSecureStorage() {
 if (process.defaultApp) {
   // 개발 모드: electron . 로 실행 시
   if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient('handsub', process.execPath, [path.resolve(process.argv[1])]);
+    const result = app.setAsDefaultProtocolClient('handsub', process.execPath, [path.resolve(process.argv[1])]);
+    console.log('[Protocol] Dev mode registration:', result ? 'success' : 'failed');
   }
 } else {
   // 프로덕션 모드
-  app.setAsDefaultProtocolClient('handsub');
+  const result = app.setAsDefaultProtocolClient('handsub');
+  console.log('[Protocol] Production mode registration:', result ? 'success' : 'failed');
 }
 
 // 단일 인스턴스 보장 (Windows/Linux)

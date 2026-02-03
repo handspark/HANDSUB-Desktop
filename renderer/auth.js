@@ -27,6 +27,7 @@ class AuthManager {
     this.user = null;
     this.refreshInterval = null;
     this._initPromise = null;
+    this._refreshPromise = null;  // 중복 호출 방지
     this.lastRefreshTime = 0;
     this._setupVisibilityHandler();
   }
@@ -160,6 +161,17 @@ class AuthManager {
   }
 
   async refresh() {
+    // 이미 갱신 중이면 기존 Promise 반환 (중복 호출 방지)
+    if (this._refreshPromise) {
+      console.log('[Auth] Refresh already in progress, waiting...');
+      return this._refreshPromise;
+    }
+
+    this._refreshPromise = this._doRefresh();
+    return this._refreshPromise;
+  }
+
+  async _doRefresh() {
     try {
       const result = await window.api.authRefresh?.();
       if (result?.success && result.user) {
@@ -190,6 +202,8 @@ class AuthManager {
       }
     } catch (e) {
       console.error('[Auth] Refresh error:', e);
+    } finally {
+      this._refreshPromise = null;  // Promise 초기화
     }
     return false;
   }
@@ -333,16 +347,17 @@ if (window.api?.onAuthSuccess) {
 
       window.dispatchEvent(new CustomEvent('auth-verified'));
 
-      // 프로 사용자면 클라우드 메모 다이얼로그 표시 (약간의 딜레이 후)
+      // 프로 사용자면 자동으로 클라우드 메모 동기화
       if (authState.isPro) {
-        setTimeout(async () => {
-          try {
-            const { showCloudImportDialog } = await import('./auth.js');
-            await showCloudImportDialog();
-          } catch (e) {
-            console.error('[Auth] Cloud import dialog error:', e);
+        try {
+          const syncEnabled = await window.api.cloudSyncEnabled?.();
+          if (syncEnabled) {
+            console.log('[Auth] Auto-importing cloud memos...');
+            await authManager.importCloudMemos('merge');
           }
-        }, 500);
+        } catch (e) {
+          console.error('[Auth] Cloud auto-sync error:', e);
+        }
       }
     }
   });
@@ -681,12 +696,18 @@ export async function showCloudImportDialog() {
     // 확인 버튼
     overlay.querySelector('#cloud-dialog-confirm').addEventListener('click', async () => {
       const mode = overlay.querySelector('input[name="import-mode"]:checked').value;
-      overlay.remove();
+      const confirmBtn = overlay.querySelector('#cloud-dialog-confirm');
+
+      // 로딩 상태
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = '가져오는 중...';
 
       // 클라우드 메모 가져오기
       const result = await authManager.importCloudMemos(mode);
       // IPC 핸들러(events.js)에서 memos-updated 처리됨
 
+      // import 완료 후 다이얼로그 닫기
+      overlay.remove();
       resolve({ action: mode, result });
     });
 
