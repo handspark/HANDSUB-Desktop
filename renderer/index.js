@@ -207,6 +207,11 @@ function initAllEvents() {
     memoState.memos = await window.api.getAll();
     if (memoState.memos.length > 0) {
       await loadMemo(0);
+    } else {
+      // 메모가 없으면 에디터 초기화
+      memoState.currentMemo = null;
+      memoState.currentIndex = -1;
+      setEditorContent('');
     }
     renderMemoList();
   });
