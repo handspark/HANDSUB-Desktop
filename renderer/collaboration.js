@@ -601,7 +601,26 @@ export function handleParticipantLeave(userId, userName) {
 // 메모별 협업자 캐시 (온라인 여부 상관없이)
 const collaboratorsCache = new Map();
 
+// 경쟁 조건 방지를 위한 버전 관리
+let updateVersion = 0;
+let updateDebounceTimer = null;
+
 async function updateParticipantsList() {
+  // debounce: 100ms 내 연속 호출은 마지막 것만 실행
+  if (updateDebounceTimer) {
+    clearTimeout(updateDebounceTimer);
+  }
+
+  return new Promise((resolve) => {
+    updateDebounceTimer = setTimeout(async () => {
+      await _updateParticipantsListInternal();
+      resolve();
+    }, 50);  // 50ms로 줄임
+  });
+}
+
+async function _updateParticipantsListInternal() {
+  const currentVersion = ++updateVersion;
   const container = document.getElementById('collab-participants');
   if (!container) {
     console.log('[Collab] No container found');
@@ -625,7 +644,12 @@ async function updateParticipantsList() {
     collaborators = await fetchCollaborators(currentMemoUuid);
   }
 
-  // 협업자가 없으면 (나만 있거나 공유되지 않은 메모) 내 프로필만 표시 안 함
+  // 버전 체크: fetch 중에 다른 호출이 시작되었으면 이 결과는 무시
+  if (currentVersion !== updateVersion) {
+    return;
+  }
+
+  // 협업자가 없으면 (나만 있거나 공유되지 않은 메모) 프로필 표시 안 함
   if (collaborators.length === 0) {
     return;
   }
@@ -721,30 +745,45 @@ async function fetchCollaborators(memoUuid) {
 
     const detail = await detailRes.json();
     const collaborators = [];
+    const addedIds = new Set(); // ID 기반 중복 방지
+    const addedEmails = new Set(); // 이메일 기반 중복 방지
 
     // 소유자 추가
     if (detail.owner) {
-      collaborators.push({
-        id: detail.owner.id,
-        name: detail.owner.name || detail.owner.email?.split('@')[0] || '소유자',
-        email: detail.owner.email,
-        avatarUrl: detail.owner.avatarUrl,
-        isMe: detail.owner.email === window.userProfile?.email,
-        isOwner: true
-      });
+      const ownerId = detail.owner.id;
+      const ownerEmail = detail.owner.email?.toLowerCase();
+      if (!addedIds.has(ownerId) && (!ownerEmail || !addedEmails.has(ownerEmail))) {
+        addedIds.add(ownerId);
+        if (ownerEmail) addedEmails.add(ownerEmail);
+        collaborators.push({
+          id: ownerId,
+          name: detail.owner.name || detail.owner.email?.split('@')[0] || '소유자',
+          email: detail.owner.email,
+          avatarUrl: detail.owner.avatarUrl,
+          isMe: detail.owner.email === window.userProfile?.email,
+          isOwner: true
+        });
+      }
     }
 
-    // 참여자 추가
+    // 참여자 추가 (중복 제거)
     if (detail.participants) {
       detail.participants.forEach(p => {
-        collaborators.push({
-          id: p.userId,
-          name: p.name || p.email?.split('@')[0] || '참여자',
-          email: p.email,
-          avatarUrl: p.avatarUrl,
-          isMe: p.email === window.userProfile?.email,
-          isOwner: false
-        });
+        const participantId = p.userId || p.id;
+        const participantEmail = p.email?.toLowerCase();
+        // ID 또는 이메일이 이미 추가되었으면 건너뜀
+        if (!addedIds.has(participantId) && (!participantEmail || !addedEmails.has(participantEmail))) {
+          addedIds.add(participantId);
+          if (participantEmail) addedEmails.add(participantEmail);
+          collaborators.push({
+            id: participantId,
+            name: p.name || p.email?.split('@')[0] || '참여자',
+            email: p.email,
+            avatarUrl: p.avatarUrl,
+            isMe: p.email === window.userProfile?.email,
+            isOwner: false
+          });
+        }
       });
     }
 
