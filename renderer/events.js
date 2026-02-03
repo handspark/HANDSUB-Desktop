@@ -321,23 +321,23 @@ export function initAppEvents() {
 
     memoState.memos = await window.api.getAll();
 
-    // 기존 메모 ID로 새 인덱스 찾기
-    if (currentMemoId) {
-      const newIndex = memoState.memos.findIndex(m => m.id === currentMemoId);
-      if (newIndex !== -1) {
-        memoState.currentIndex = newIndex;
-      } else if (memoState.memos.length > 0) {
-        // 기존 메모가 삭제된 경우 첫 번째 메모 로드
-        await loadMemo(0);
-      }
-    } else if (memoState.memos.length > 0) {
-      // 현재 메모가 없고 새 메모가 있으면 첫 번째 메모 로드
-      await loadMemo(0);
-    } else {
+    if (memoState.memos.length === 0) {
       // 메모가 없으면 에디터 초기화
       memoState.currentMemo = null;
       memoState.currentIndex = -1;
       setEditorContent('');
+    } else if (currentMemoId) {
+      // 기존 메모 ID로 새 인덱스 찾기
+      const newIndex = memoState.memos.findIndex(m => m.id === currentMemoId);
+      if (newIndex !== -1) {
+        memoState.currentIndex = newIndex;
+      } else {
+        // 기존 메모가 삭제된 경우 첫 번째 메모 로드
+        await loadMemo(0);
+      }
+    } else {
+      // 현재 메모가 없고 새 메모가 있으면 첫 번째 메모 로드
+      await loadMemo(0);
     }
 
     if (sidebar.classList.contains('open')) {
