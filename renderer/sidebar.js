@@ -336,11 +336,15 @@ function openSharePopup(memo, btnEl) {
   const status = document.getElementById('share-status');
   const proLock = document.getElementById('share-pro-lock');
 
-  // 우측 하단 고정
+  // 알림 드롭다운 닫기 (팝업 중복 방지)
+  const notificationDropdown = document.getElementById('notification-dropdown');
+  if (notificationDropdown) notificationDropdown.classList.add('hidden');
+
+  // 상단 우측 (타이틀바 아래)
   popup.style.right = '12px';
-  popup.style.bottom = '45px';
+  popup.style.top = '45px';
   popup.style.left = 'auto';
-  popup.style.top = 'auto';
+  popup.style.bottom = 'auto';
 
   // 초기화
   emailInput.value = '';

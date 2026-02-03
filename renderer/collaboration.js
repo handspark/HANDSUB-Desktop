@@ -625,15 +625,6 @@ function updateParticipantsList() {
       container.appendChild(avatar);
     });
   }
-
-  // 전체 컨테이너 클릭 시 공유 팝업 열기
-  container.style.cursor = 'pointer';
-  container.onclick = (e) => {
-    e.stopPropagation();
-    if (memoState.currentMemo && window.openSharePopupFromStatusbar) {
-      window.openSharePopupFromStatusbar(memoState.currentMemo, container);
-    }
-  };
 }
 
 // 전역 함수로 등록 (memo.js에서 호출용)
@@ -1239,6 +1230,10 @@ function initInviteBellEvents() {
     const isHidden = dropdown.classList.contains('hidden');
 
     if (isHidden) {
+      // 공유 팝업 닫기 (팝업 중복 방지)
+      const sharePopup = document.getElementById('share-popup');
+      if (sharePopup) sharePopup.classList.add('hidden');
+
       // 열 때마다 새로 렌더링
       await renderNotificationDropdown();
       dropdown.classList.remove('hidden');
@@ -1258,7 +1253,23 @@ function initInviteBellEvents() {
 // DOM 로드 후 이벤트 초기화
 setTimeout(() => {
   initInviteBellEvents();
+  initAddFriendButton();
 }, 100);
+
+/**
+ * 친구 추가 버튼 이벤트
+ */
+function initAddFriendButton() {
+  const addFriendBtn = document.getElementById('addFriendBtn');
+  if (!addFriendBtn) return;
+
+  addFriendBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (memoState.currentMemo && window.openSharePopupFromStatusbar) {
+      window.openSharePopupFromStatusbar(memoState.currentMemo, addFriendBtn);
+    }
+  });
+}
 
 /**
  * 실시간 초대 알림 처리
