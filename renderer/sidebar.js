@@ -744,9 +744,14 @@ async function sendMemoByEmail(email) {
       // 협업 모듈 사용하여 세션 생성 및 WebSocket 참가
       const { startCollaboration, collabState } = window.collabModule || {};
 
+      // 현재 에디터 내용 가져오기 (저장된 내용이 아닌 실시간 내용)
+      const editorEl = document.getElementById('editor');
+      const currentContent = editorEl?.innerText || sharePopupMemo.content || '';
+      console.log('[Share] Current content length:', currentContent.length, 'first line:', currentContent.split('\n')[0]?.substring(0, 50));
+
       if (startCollaboration && !collabState?.isCollaborating) {
         console.log('[Share] Starting collaboration for host...');
-        const collabResult = await startCollaboration(sharePopupMemo.uuid, sharePopupMemo.content || '');
+        const collabResult = await startCollaboration(sharePopupMemo.uuid, currentContent);
 
         if (collabResult.success) {
           sharePopupSessionId = collabResult.sessionId;
@@ -768,7 +773,7 @@ async function sendMemoByEmail(email) {
           },
           body: JSON.stringify({
             memoUuid: sharePopupMemo.uuid,
-            title: sharePopupMemo.content?.split('\n')[0]?.substring(0, 100) || 'Untitled'
+            title: currentContent.split('\n')[0]?.substring(0, 100) || 'Untitled'
           })
         });
 

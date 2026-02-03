@@ -598,7 +598,10 @@ export function handleParticipantLeave(userId, userName) {
   showCollabNotification(`${userName}님이 나갔습니다`);
 }
 
-function updateParticipantsList() {
+// 메모별 협업자 캐시 (온라인 여부 상관없이)
+const collaboratorsCache = new Map();
+
+async function updateParticipantsList() {
   const container = document.getElementById('collab-participants');
   if (!container) {
     console.log('[Collab] No container found');
@@ -613,24 +616,157 @@ function updateParticipantsList() {
     return;
   }
 
+  // 현재 메모의 UUID 가져오기
+  const currentMemoUuid = memoState.currentMemo?.uuid;
+
+  // 협업자 목록 가져오기 (온라인 여부 상관없이)
+  let collaborators = [];
+  if (currentMemoUuid) {
+    collaborators = await fetchCollaborators(currentMemoUuid);
+  }
+
+  // 협업자가 없으면 (나만 있거나 공유되지 않은 메모) 내 프로필만 표시 안 함
+  if (collaborators.length === 0) {
+    return;
+  }
+
   // 내 프로필 표시
   const myColor = collabState.isCollaborating ? collabState.myColor : '#666';
-  const isHost = collabState.isHost;
+  const isHost = collaborators.some(c => c.isOwner && c.isMe);
   const myAvatar = createParticipantAvatar({
     name: '나',
     cursorColor: myColor,
     avatarUrl: window.userProfile.avatarUrl,
-    isTyping: false
+    isTyping: false,
+    isOnline: true  // 나는 항상 온라인
   }, true, isHost);
 
   container.appendChild(myAvatar);
 
-  // 협업 중이면 다른 참여자들도 표시
-  if (collabState.isCollaborating) {
-    collabState.participants.forEach((participant, odUserId) => {
-      const avatar = createParticipantAvatar(participant, false, false, odUserId);
-      container.appendChild(avatar);
+  // 다른 협업자들 (나 제외)
+  const otherCollaborators = collaborators.filter(c => !c.isMe);
+
+  // 온라인 상태 확인 후 정렬 (온라인 먼저, 그 다음 오프라인)
+  const sortedCollaborators = otherCollaborators
+    .map(collaborator => {
+      const liveParticipant = collabState.participants.get(collaborator.id);
+      return {
+        ...collaborator,
+        liveParticipant,
+        isOnline: liveParticipant !== undefined
+      };
+    })
+    .sort((a, b) => {
+      // 온라인이 먼저 (true = 1, false = 0이므로 b - a)
+      if (a.isOnline !== b.isOnline) {
+        return b.isOnline - a.isOnline;
+      }
+      // 같은 상태면 소유자가 먼저
+      if (a.isOwner !== b.isOwner) {
+        return b.isOwner - a.isOwner;
+      }
+      return 0;
     });
+
+  // 정렬된 순서로 표시
+  sortedCollaborators.forEach(collaborator => {
+    const avatar = createParticipantAvatar({
+      name: collaborator.name,
+      cursorColor: collaborator.liveParticipant?.cursorColor || '#666',
+      avatarUrl: collaborator.avatarUrl,
+      isTyping: collaborator.liveParticipant?.lineIndex >= 0,
+      isOnline: collaborator.isOnline
+    }, false, collaborator.isOwner, collaborator.id);
+
+    container.appendChild(avatar);
+  });
+}
+
+/**
+ * 메모의 협업자 목록 가져오기 (서버에서)
+ */
+async function fetchCollaborators(memoUuid) {
+  // 캐시 확인
+  if (collaboratorsCache.has(memoUuid)) {
+    return collaboratorsCache.get(memoUuid);
+  }
+
+  try {
+    const token = await window.api.authGetToken();
+    if (!token) return [];
+
+    const syncServer = await window.api.getSyncServer();
+
+    // 세션 정보 가져오기
+    const sessionRes = await fetch(`${syncServer}/api/v2/collab/session`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ memoUuid, title: '' })
+    });
+
+    if (!sessionRes.ok) return [];
+
+    const sessionData = await sessionRes.json();
+    const sessionId = sessionData.sessionId;
+
+    // 세션 상세 정보 (참여자 목록) 가져오기
+    const detailRes = await fetch(`${syncServer}/api/v2/collab/session/${sessionId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (!detailRes.ok) return [];
+
+    const detail = await detailRes.json();
+    const collaborators = [];
+
+    // 소유자 추가
+    if (detail.owner) {
+      collaborators.push({
+        id: detail.owner.id,
+        name: detail.owner.name || detail.owner.email?.split('@')[0] || '소유자',
+        email: detail.owner.email,
+        avatarUrl: detail.owner.avatarUrl,
+        isMe: detail.owner.email === window.userProfile?.email,
+        isOwner: true
+      });
+    }
+
+    // 참여자 추가
+    if (detail.participants) {
+      detail.participants.forEach(p => {
+        collaborators.push({
+          id: p.userId,
+          name: p.name || p.email?.split('@')[0] || '참여자',
+          email: p.email,
+          avatarUrl: p.avatarUrl,
+          isMe: p.email === window.userProfile?.email,
+          isOwner: false
+        });
+      });
+    }
+
+    // 캐시 저장 (30초 후 만료)
+    collaboratorsCache.set(memoUuid, collaborators);
+    setTimeout(() => collaboratorsCache.delete(memoUuid), 30000);
+
+    return collaborators;
+  } catch (e) {
+    console.error('[Collab] Failed to fetch collaborators:', e);
+    return [];
+  }
+}
+
+/**
+ * 협업자 캐시 초기화 (메모 변경 시 호출)
+ */
+function clearCollaboratorsCache(memoUuid) {
+  if (memoUuid) {
+    collaboratorsCache.delete(memoUuid);
+  } else {
+    collaboratorsCache.clear();
   }
 }
 
@@ -640,6 +776,12 @@ window.updateCollabParticipants = updateParticipantsList;
 function createParticipantAvatar(participant, isMe, isHost, userId) {
   const avatar = document.createElement('div');
   avatar.className = 'collab-participant' + (isMe ? ' is-me' : '');
+
+  // 오프라인 상태 표시
+  if (!isMe && participant.isOnline === false) {
+    avatar.classList.add('offline');
+  }
+
   avatar.title = participant.name || '참여자';
 
   // 기본 Gravatar 아바타
@@ -1809,6 +1951,9 @@ window.collabModule = {
   startCollaboration,
   stopCollaboration,
   isCollaborating,
+  // 협업자 캐시
+  clearCollaboratorsCache,
+  fetchCollaborators,
   // 가벼운 협업
   initLiteCollab,
   cleanupLiteCollab,

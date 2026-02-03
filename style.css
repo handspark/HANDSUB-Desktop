@@ -1677,6 +1677,14 @@ html, body {
   border-style: solid;
 }
 
+.collab-participant.offline {
+  opacity: 0.5;
+}
+
+.collab-participant.offline img {
+  filter: grayscale(100%);
+}
+
 .collab-participant .typing-indicator {
   position: absolute;
   bottom: -2px;
