@@ -326,7 +326,18 @@ export function initAppEvents() {
       const newIndex = memoState.memos.findIndex(m => m.id === currentMemoId);
       if (newIndex !== -1) {
         memoState.currentIndex = newIndex;
+      } else if (memoState.memos.length > 0) {
+        // 기존 메모가 삭제된 경우 첫 번째 메모 로드
+        await loadMemo(0);
       }
+    } else if (memoState.memos.length > 0) {
+      // 현재 메모가 없고 새 메모가 있으면 첫 번째 메모 로드
+      await loadMemo(0);
+    } else {
+      // 메모가 없으면 에디터 초기화
+      memoState.currentMemo = null;
+      memoState.currentIndex = -1;
+      setEditorContent('');
     }
 
     if (sidebar.classList.contains('open')) {

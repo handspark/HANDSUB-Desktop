@@ -685,11 +685,7 @@ export async function showCloudImportDialog() {
 
       // 클라우드 메모 가져오기
       const result = await authManager.importCloudMemos(mode);
-
-      // 메모 목록 갱신 이벤트 발생
-      if (result?.success) {
-        window.dispatchEvent(new CustomEvent('memos-updated'));
-      }
+      // IPC 핸들러(events.js)에서 memos-updated 처리됨
 
       resolve({ action: mode, result });
     });
