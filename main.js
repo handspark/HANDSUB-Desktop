@@ -716,8 +716,30 @@ ipcMain.handle('memo-update-uuid', (_, id, newUuid) => {
   return true;
 });
 
-ipcMain.handle('memo-delete', (_, id) => {
+ipcMain.handle('memo-delete', async (_, id) => {
   if (!isValidId(id)) return false;
+
+  // 동기화 활성화 시 서버에서도 삭제
+  if (getCloudSyncEnabled() && isPro()) {
+    const memo = db.prepare('SELECT uuid, is_cloud FROM memos WHERE id = ?').get(id);
+    if (memo?.is_cloud && memo?.uuid) {
+      try {
+        const auth = getStoredAuth();
+        if (auth?.accessToken) {
+          const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
+          await fetch(`${serverUrl}/api/v2/cloud/memo/${memo.uuid}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${auth.accessToken}` }
+          });
+          console.log('[Cloud] Memo deleted from server:', memo.uuid);
+        }
+      } catch (e) {
+        console.error('[Cloud] Failed to delete from server:', e.message);
+        // 서버 삭제 실패해도 로컬은 삭제
+      }
+    }
+  }
+
   db.prepare('DELETE FROM memos WHERE id = ?').run(id);
   return true;
 });
@@ -793,22 +815,93 @@ ipcMain.handle('cloud-sync-memo', async (_, memoId) => {
     });
 
     if (!response.ok) {
-      const err = await response.json();
-      return { success: false, error: err.error };
+      const err = await response.json().catch(() => ({}));
+      // 네트워크 오류가 아닌 서버 오류는 큐에 추가하지 않음
+      return { success: false, error: err.error || 'Server error' };
     }
 
     const result = await response.json();
 
-    // 로컬 메모에 클라우드 정보 업데이트
+    // 로컬 메모에 클라우드 정보 업데이트 + sync_status를 synced로
     db.prepare(`
-      UPDATE memos SET is_cloud = 1, cloud_memo_id = ?, cloud_snapshot = ?
+      UPDATE memos SET is_cloud = 1, cloud_memo_id = ?, cloud_snapshot = ?, sync_status = 'synced', local_updated_at = ?
       WHERE id = ?
-    `).run(result.id, memo.content, memoId);
+    `).run(result.id, memo.content, Date.now(), memoId);
 
     console.log('[Cloud] Memo synced:', memo.uuid);
     return { success: true, cloudMemoId: result.id };
   } catch (e) {
     console.error('[Cloud] Sync memo error:', e);
+
+    // 네트워크 오류 시 오프라인 큐에 추가
+    const memo = db.prepare('SELECT uuid FROM memos WHERE id = ?').get(memoId);
+    if (memo?.uuid && typeof SyncManager !== 'undefined' && SyncManager.queueForSync) {
+      SyncManager.queueForSync('memo', memo.uuid, 'update');
+      db.prepare(`UPDATE memos SET sync_status = 'pending' WHERE id = ?`).run(memoId);
+      console.log('[Cloud] Queued for later sync:', memo.uuid);
+      return { success: false, error: 'offline', queued: true };
+    }
+
+    return { success: false, error: e.message };
+  }
+});
+
+// 모든 로컬 메모를 클라우드에 업로드 (동기화 활성화 시)
+ipcMain.handle('cloud-upload-all-memos', async () => {
+  try {
+    const auth = getStoredAuth();
+    if (!auth?.accessToken || auth.user?.tier !== 'pro') {
+      return { success: false, error: 'Pro subscription required' };
+    }
+
+    // 아직 클라우드에 없는 로컬 메모들 조회
+    const localMemos = db.prepare(`
+      SELECT * FROM memos
+      WHERE (is_cloud = 0 OR is_cloud IS NULL)
+      AND content IS NOT NULL AND content != ''
+    `).all();
+
+    if (localMemos.length === 0) {
+      console.log('[Cloud] No local memos to upload');
+      return { success: true, uploadedCount: 0 };
+    }
+
+    const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
+    let uploadedCount = 0;
+
+    for (const memo of localMemos) {
+      try {
+        const response = await fetch(`${serverUrl}/api/v2/cloud/memo/${memo.uuid}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${auth.accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            content: memo.content,
+            pinned: memo.pinned === 1
+          })
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          // 로컬 메모에 클라우드 정보 업데이트
+          db.prepare(`
+            UPDATE memos SET is_cloud = 1, cloud_memo_id = ?, cloud_snapshot = ?, sync_status = 'synced'
+            WHERE id = ?
+          `).run(result.id, memo.content, memo.id);
+          uploadedCount++;
+          console.log('[Cloud] Uploaded memo:', memo.uuid);
+        }
+      } catch (e) {
+        console.error('[Cloud] Failed to upload memo:', memo.uuid, e.message);
+      }
+    }
+
+    console.log(`[Cloud] Uploaded ${uploadedCount}/${localMemos.length} memos`);
+    return { success: true, uploadedCount };
+  } catch (e) {
+    console.error('[Cloud] Upload all memos error:', e);
     return { success: false, error: e.message };
   }
 });
@@ -2198,9 +2291,67 @@ ipcMain.handle('get-cloud-sync-enabled', () => {
   return getCloudSyncEnabled();
 });
 
-ipcMain.handle('set-cloud-sync-enabled', (_, enabled) => {
+ipcMain.handle('set-cloud-sync-enabled', async (_, enabled) => {
   if (typeof enabled !== 'boolean') return false;
   setCloudSyncEnabled(enabled);
+
+  // 동기화를 켤 때 즉시 동기화 시작
+  if (enabled && isPro()) {
+    console.log('[CloudSync] Enabled - starting initial sync...');
+
+    try {
+      // 1. 로컬 메모를 서버에 업로드
+      const auth = getStoredAuth();
+      if (auth?.accessToken) {
+        const localMemos = db.prepare(`
+          SELECT * FROM memos
+          WHERE (is_cloud = 0 OR is_cloud IS NULL)
+          AND content IS NOT NULL AND content != ''
+        `).all();
+
+        const serverUrl = config.syncServerUrl || 'https://api.handsub.com';
+        let uploadedCount = 0;
+
+        for (const memo of localMemos) {
+          try {
+            const response = await fetch(`${serverUrl}/api/v2/cloud/memo/${memo.uuid}`, {
+              method: 'PUT',
+              headers: {
+                'Authorization': `Bearer ${auth.accessToken}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                content: memo.content,
+                pinned: memo.pinned === 1
+              })
+            });
+
+            if (response.ok) {
+              const result = await response.json();
+              db.prepare(`
+                UPDATE memos SET is_cloud = 1, cloud_memo_id = ?, cloud_snapshot = ?, sync_status = 'synced'
+                WHERE id = ?
+              `).run(result.id, memo.content, memo.id);
+              uploadedCount++;
+            }
+          } catch (e) {
+            console.error('[CloudSync] Upload error:', e.message);
+          }
+        }
+        console.log(`[CloudSync] Uploaded ${uploadedCount} local memos`);
+      }
+
+      // 2. 메인 창에 메모 목록 갱신 알림
+      BrowserWindow.getAllWindows().forEach(w => {
+        if (!w.isDestroyed()) {
+          w.webContents.send('memos-updated');
+        }
+      });
+    } catch (e) {
+      console.error('[CloudSync] Initial sync error:', e);
+    }
+  }
+
   return true;
 });
 
@@ -2646,6 +2797,13 @@ const SyncManager = {
       });
 
       if (!response.ok) {
+        // 401 인증 에러는 재시도 의미 없음
+        if (response.status === 401) {
+          console.log('[Sync] Auth error - stopping retries, please re-login');
+          notifySyncStatus('error');
+          syncInProgress = false;
+          return;
+        }
         throw new Error(`Sync failed: ${response.status}`);
       }
 
@@ -2659,7 +2817,14 @@ const SyncManager = {
       console.error('[Sync] Batch sync error:', e);
       notifySyncStatus('error');
 
-      // 재시도 스케줄링
+      // 인증 에러면 재시도 안 함
+      if (e.message?.includes('401')) {
+        console.log('[Sync] Auth error - stopping retries');
+        syncInProgress = false;
+        return;
+      }
+
+      // 네트워크 에러만 재시도
       this.scheduleRetry();
     } finally {
       syncInProgress = false;
@@ -4398,7 +4563,9 @@ ipcMain.handle('auth-get-user', () => {
 
 ipcMain.handle('auth-logout', async (_, options = {}) => {
   // options: { keepLocal: boolean } - 로컬에 메모 남길지 여부
-  const { keepLocal = true } = options;
+  // 동기화가 활성화되어 있으면 기본적으로 로컬 캐시 삭제 (클라우드가 메인 저장소)
+  const cloudSyncEnabled = getCloudSyncEnabled();
+  const { keepLocal = !cloudSyncEnabled } = options;
 
   try {
     const auth = getStoredAuth();

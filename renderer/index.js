@@ -5,7 +5,7 @@
 
 import { elements, memoState, sidebarState, timers, snippetState } from './state.js';
 import { setEditorContent } from './editor.js';
-import { loadMemo, setRenderMemoListFn, updateStatusbar } from './memo.js';
+import { loadMemo, setRenderMemoListFn, updateStatusbar, flushCloudSync } from './memo.js';
 import {
   renderMemoList,
   toggleSidebar,
@@ -135,7 +135,10 @@ function initWebSocketStatus() {
 
 function initVisibilityChange() {
   document.addEventListener('visibilitychange', async () => {
-    if (document.visibilityState === 'visible') {
+    if (document.visibilityState === 'hidden') {
+      // 백그라운드로 갈 때 클라우드 동기화 즉시 실행
+      await flushCloudSync();
+    } else if (document.visibilityState === 'visible') {
       if (memoState.pendingNewMemo) return;
 
       // 스니펫 목록 갱신
@@ -198,6 +201,15 @@ function initAllEvents() {
 
   // WebSocket 연결 상태
   initWebSocketStatus();
+
+  // 클라우드 동기화 후 메모 목록 갱신
+  window.addEventListener('memos-updated', async () => {
+    memoState.memos = await window.api.getAll();
+    if (memoState.memos.length > 0) {
+      await loadMemo(0);
+    }
+    renderMemoList();
+  });
 
   // 창 닫힘
   window.addEventListener('beforeunload', cleanupAllResources);

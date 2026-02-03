@@ -73,6 +73,8 @@ contextBridge.exposeInMainWorld('api', {
   cloudSyncMemo: (memoId) => ipcRenderer.invoke('cloud-sync-memo', memoId),// 메모를 클라우드에 동기화
   cloudImportMemos: (mode) => ipcRenderer.invoke('cloud-import-memos', mode), // 클라우드 메모 가져오기 (merge | replace)
   cloudDeleteMemo: (memoUuid) => ipcRenderer.invoke('cloud-delete-memo', memoUuid), // 클라우드 메모 삭제
+  cloudSyncEnabled: () => ipcRenderer.invoke('get-cloud-sync-enabled'),    // 클라우드 동기화 활성화 여부
+  cloudUploadAllMemos: () => ipcRenderer.invoke('cloud-upload-all-memos'), // 모든 로컬 메모 업로드
 
   // ===== Image Operations =====
   saveImage: (base64Data, mimeType) => ipcRenderer.invoke('image-save', base64Data, mimeType),

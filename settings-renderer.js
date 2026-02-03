@@ -58,7 +58,34 @@ confirmModalBackdrop?.addEventListener('click', () => hideConfirmModal(false));
 // 클라우드 로그아웃 다이얼로그
 function showCloudLogoutDialog(cloudMemoCount) {
   return new Promise((resolve) => {
-    // 오버레이 생성
+    // 애니메이션 스타일 추가
+    if (!document.getElementById('cloud-dialog-styles')) {
+      const style = document.createElement('style');
+      style.id = 'cloud-dialog-styles';
+      style.textContent = `
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(20px) scale(0.95); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .cloud-dialog-blur {
+          filter: blur(6px);
+          pointer-events: none;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    // 메인 컨텐츠에 블러 적용 (타이틀바 + 컨테이너)
+    const titlebar = document.getElementById('titlebar');
+    const container = document.getElementById('container');
+    if (titlebar) titlebar.classList.add('cloud-dialog-blur');
+    if (container) container.classList.add('cloud-dialog-blur');
+
+    // 오버레이 생성 (투명 배경)
     const overlay = document.createElement('div');
     overlay.style.cssText = `
       position: fixed;
@@ -66,87 +93,91 @@ function showCloudLogoutDialog(cloudMemoCount) {
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(0, 0, 0, 0.5);
+      background: transparent;
       display: flex;
       align-items: center;
       justify-content: center;
       z-index: 10000;
     `;
 
+    // 블러 해제 함수 저장
+    overlay._removeBlur = () => {
+      if (titlebar) titlebar.classList.remove('cloud-dialog-blur');
+      if (container) container.classList.remove('cloud-dialog-blur');
+    };
+
     overlay.innerHTML = `
       <div style="
-        background: var(--modal-bg, #fff);
-        border-radius: 12px;
-        padding: 24px;
-        max-width: 360px;
+        background: transparent;
+        padding: 32px 24px;
+        max-width: 320px;
         width: 90%;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        animation: slideUp 0.25s ease-out;
       ">
-        <div style="text-align: center; margin-bottom: 16px;">
-          <svg viewBox="0 0 512 512" width="48" height="48">
-            <path fill="#007AFF" d="M421 406H91c-24.05 0-46.794-9.327-64.042-26.264C9.574 362.667 0 340.031 0 316s9.574-46.667 26.958-63.736c13.614-13.368 30.652-21.995 49.054-25.038-.008-.406-.012-.815-.012-1.226 0-66.168 53.832-120 120-120 24.538 0 48.119 7.387 68.194 21.363 14.132 9.838 25.865 22.443 34.587 37.043 14.079-8.733 30.318-13.406 47.219-13.406 44.886 0 82.202 33.026 88.921 76.056 18.811 2.88 36.244 11.581 50.122 25.208C502.426 269.333 512 291.969 512 316s-9.574 46.667-26.957 63.736C467.794 396.673 445.05 406 421 406z"/>
-          </svg>
-        </div>
-        <div style="font-size: 18px; font-weight: 600; text-align: center; margin-bottom: 8px; color: var(--text-color, #333);">
+        <div style="font-size: 15px; font-weight: 500; text-align: center; margin-bottom: 6px; color: var(--text-primary);">
           로그아웃
         </div>
-        <div style="font-size: 13px; color: var(--text-muted, #666); text-align: center; margin-bottom: 20px;">
-          이 기기에 클라우드 메모 ${cloudMemoCount}개가 있습니다
+        <div style="font-size: 12px; color: var(--text-muted); text-align: center; margin-bottom: 24px;">
+          메모 ${cloudMemoCount}개
         </div>
 
-        <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px;">
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px;">
           <label class="cloud-opt" data-value="keep" style="
             display: flex;
-            align-items: flex-start;
+            align-items: center;
             gap: 12px;
-            padding: 12px;
-            border: 2px solid var(--border-color, #e0e0e0);
+            padding: 12px 14px;
+            background: var(--hover-bg);
+            border: 1px solid var(--border-color);
             border-radius: 8px;
             cursor: pointer;
+            transition: all 0.15s ease;
           ">
-            <input type="radio" name="logout-mode" value="keep" checked style="margin-top: 2px; accent-color: #007AFF;">
+            <input type="radio" name="logout-mode" value="keep" checked style="width: 16px; height: 16px; accent-color: var(--text-primary);">
             <div>
-              <div style="font-size: 14px; font-weight: 600; color: var(--text-color, #333);">이 기기에 남기기</div>
-              <div style="font-size: 12px; color: var(--text-muted, #666); margin-top: 2px;">다른 사람도 이 기기에서 볼 수 있음</div>
+              <div style="font-size: 13px; font-weight: 500; color: var(--text-primary);">기기에 남기기</div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">다른 사용자도 볼 수 있음</div>
             </div>
           </label>
           <label class="cloud-opt" data-value="delete" style="
             display: flex;
-            align-items: flex-start;
+            align-items: center;
             gap: 12px;
-            padding: 12px;
-            border: 2px solid var(--border-color, #e0e0e0);
+            padding: 12px 14px;
+            background: var(--hover-bg);
+            border: 1px solid var(--border-color);
             border-radius: 8px;
             cursor: pointer;
+            transition: all 0.15s ease;
           ">
-            <input type="radio" name="logout-mode" value="delete" style="margin-top: 2px; accent-color: #007AFF;">
+            <input type="radio" name="logout-mode" value="delete" style="width: 16px; height: 16px; accent-color: var(--text-primary);">
             <div>
-              <div style="font-size: 14px; font-weight: 600; color: var(--text-color, #333);">이 기기에서 삭제</div>
-              <div style="font-size: 12px; color: var(--text-muted, #666); margin-top: 2px;">다음 로그인 시 클라우드에서 복원됨</div>
+              <div style="font-size: 13px; font-weight: 500; color: var(--text-primary);">기기에서 삭제</div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">재로그인 시 복원됨</div>
             </div>
           </label>
         </div>
 
-        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+        <div style="display: flex; gap: 8px; justify-content: center;">
           <button id="cloud-cancel" style="
             padding: 10px 20px;
-            border-radius: 8px;
-            font-size: 14px;
+            border-radius: 6px;
+            font-size: 13px;
             font-weight: 500;
             cursor: pointer;
-            background: var(--btn-secondary-bg, #f5f5f5);
-            border: 1px solid var(--border-color, #e0e0e0);
-            color: var(--text-color, #333);
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
           ">취소</button>
           <button id="cloud-confirm" style="
             padding: 10px 20px;
-            border-radius: 8px;
-            font-size: 14px;
+            border-radius: 6px;
+            font-size: 13px;
             font-weight: 500;
             cursor: pointer;
-            background: #007AFF;
+            background: var(--text-primary);
             border: none;
-            color: white;
+            color: var(--bg-primary);
           ">로그아웃</button>
         </div>
       </div>
@@ -156,22 +187,23 @@ function showCloudLogoutDialog(cloudMemoCount) {
     overlay.querySelectorAll('.cloud-opt').forEach(opt => {
       opt.addEventListener('click', () => {
         overlay.querySelectorAll('.cloud-opt').forEach(o => {
-          o.style.borderColor = 'var(--border-color, #e0e0e0)';
-          o.style.background = 'transparent';
+          o.style.borderColor = 'var(--border-color)';
+          o.style.background = 'var(--hover-bg)';
         });
-        opt.style.borderColor = '#007AFF';
-        opt.style.background = 'rgba(0, 122, 255, 0.05)';
+        opt.style.borderColor = 'var(--text-secondary)';
+        opt.style.background = 'var(--active-bg)';
         opt.querySelector('input').checked = true;
       });
     });
 
     // 첫 번째 옵션 선택 상태 표시
     const firstOpt = overlay.querySelector('.cloud-opt');
-    firstOpt.style.borderColor = '#007AFF';
-    firstOpt.style.background = 'rgba(0, 122, 255, 0.05)';
+    firstOpt.style.borderColor = 'var(--text-secondary)';
+    firstOpt.style.background = 'var(--active-bg)';
 
     // 취소 버튼
     overlay.querySelector('#cloud-cancel').addEventListener('click', () => {
+      overlay._removeBlur?.();
       overlay.remove();
       resolve({ action: 'cancel' });
     });
@@ -179,6 +211,7 @@ function showCloudLogoutDialog(cloudMemoCount) {
     // 확인 버튼
     overlay.querySelector('#cloud-confirm').addEventListener('click', () => {
       const mode = overlay.querySelector('input[name="logout-mode"]:checked').value;
+      overlay._removeBlur?.();
       overlay.remove();
       resolve({ action: mode, keepLocal: mode === 'keep' });
     });

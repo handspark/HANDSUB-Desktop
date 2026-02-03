@@ -208,6 +208,18 @@ html, body {
   margin-top: 4px;
 }
 
+.option-description {
+  width: 100%;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 8px 0 4px 0;
+  line-height: 1.4;
+}
+
+#cloudSyncOption {
+  flex-wrap: wrap;
+}
+
 .option label {
   display: flex;
   justify-content: space-between;

@@ -107,7 +107,44 @@ class AuthManager {
     // 백그라운드에서 서버에서 최신 프로필 가져오기 (구매 후 티어 반영)
     this.refreshProfileOnInit();
 
+    // Pro 사용자이고 클라우드 동기화가 활성화되어 있으면 서버에서 메모 가져오기
+    if (authState.isPro) {
+      this.syncCloudMemosOnLogin();
+    }
+
     return { success: true, user: this.user };
+  }
+
+  // 로그인 시 클라우드 메모 동기화
+  async syncCloudMemosOnLogin() {
+    try {
+      const syncEnabled = await window.api.cloudSyncEnabled?.();
+      if (!syncEnabled) {
+        console.log('[Auth] Cloud sync disabled, skipping memo sync');
+        return;
+      }
+
+      // 1. 먼저 로컬 메모를 서버에 업로드
+      console.log('[Auth] Uploading local memos to cloud...');
+      const uploadResult = await window.api.cloudUploadAllMemos?.();
+      if (uploadResult?.success) {
+        console.log(`[Auth] Local memos uploaded: ${uploadResult.uploadedCount || 0} memos`);
+      }
+
+      // 2. 서버 메모를 로컬에 병합 (merge 모드)
+      console.log('[Auth] Importing cloud memos (merge)...');
+      const result = await window.api.cloudImportMemos?.('merge');
+
+      if (result?.success) {
+        console.log(`[Auth] Cloud memos imported: ${result.importedCount || 0} memos`);
+        // 메모 목록 갱신 이벤트 발생
+        window.dispatchEvent(new CustomEvent('memos-updated'));
+      } else {
+        console.log('[Auth] Cloud memo import failed:', result?.error);
+      }
+    } catch (e) {
+      console.error('[Auth] Cloud memo sync error:', e);
+    }
   }
 
   startRefreshInterval() {

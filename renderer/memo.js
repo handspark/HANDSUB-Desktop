@@ -10,6 +10,45 @@ import { startCollaboration, stopCollaboration, isCollaborating } from './collab
 
 const { editor, sidebar } = elements;
 
+// ===== 클라우드 동기화 상태 =====
+const cloudSyncState = {
+  enabled: false,           // 동기화 활성화 여부
+  isPro: false,             // Pro 사용자 여부
+  syncTimer: null,          // 15초 debounce 타이머
+  pendingMemoId: null,      // 업로드 대기 중인 메모 ID
+  isSyncing: false,         // 현재 업로드 중인지
+  SYNC_DELAY: 15000,        // 15초
+};
+
+// 클라우드 동기화 상태 초기화
+async function initCloudSyncState() {
+  try {
+    cloudSyncState.isPro = await window.api.authIsPro?.() || false;
+    cloudSyncState.enabled = cloudSyncState.isPro && await window.api.cloudSyncEnabled?.() || false;
+  } catch (e) {
+    console.error('[CloudSync] Init error:', e);
+    cloudSyncState.enabled = false;
+    cloudSyncState.isPro = false;
+  }
+}
+
+// 초기화 실행
+initCloudSyncState();
+
+// Pro/로그인 상태 변경 시 동기화 상태 업데이트
+if (window.api?.onAuthSuccess) {
+  window.api.onAuthSuccess(() => initCloudSyncState());
+}
+if (window.api?.onAuthLogout) {
+  window.api.onAuthLogout(() => {
+    cloudSyncState.enabled = false;
+    cloudSyncState.isPro = false;
+  });
+}
+if (window.api?.onTierUpdated) {
+  window.api.onTierUpdated(() => initCloudSyncState());
+}
+
 // renderMemoList 콜백 (순환 참조 방지)
 let renderMemoListFn = null;
 export function setRenderMemoListFn(fn) {
@@ -59,6 +98,9 @@ export function formatDate(time) {
 // ===== 메모 로딩 =====
 
 export async function loadMemo(index) {
+  // 메모 전환 전 클라우드 동기화 즉시 실행
+  await flushCloudSync();
+
   memoState.memos = await window.api.getAll();
 
   // 기존 링크 프리뷰 제거
@@ -179,6 +221,11 @@ export async function saveCurrentContent() {
 
   // 리마인더 자동 등록 (디바운싱 - 타이핑 완료 후 등록)
   scheduleReminderSync(content, memoState.currentMemo?.id);
+
+  // 클라우드 동기화 예약 (15초 debounce)
+  if (memoState.currentMemo?.id) {
+    triggerCloudSync(memoState.currentMemo.id);
+  }
 }
 
 // 리마인더 등록 디바운싱 (0.5초 대기)
@@ -363,6 +410,9 @@ export async function cleanupOnClose() {
     } else if (plainText !== '' || hasMedia) {
       await saveCurrentContent();
     }
+
+    // 앱 종료 전 클라우드 동기화 즉시 실행
+    await flushCloudSync();
   } catch (e) {
     console.error('Cleanup error:', e);
   }
@@ -376,6 +426,89 @@ export function triggerSave() {
     saveCurrentContent();
   }, 300);
 }
+
+// ===== 클라우드 동기화 (15초 debounce) =====
+
+// 클라우드 업로드 예약 (15초 debounce)
+function triggerCloudSync(memoId) {
+  if (!cloudSyncState.enabled || !memoId) return;
+
+  // 기존 타이머 취소
+  if (cloudSyncState.syncTimer) {
+    clearTimeout(cloudSyncState.syncTimer);
+  }
+
+  cloudSyncState.pendingMemoId = memoId;
+
+  // 15초 후 업로드
+  cloudSyncState.syncTimer = setTimeout(() => {
+    uploadToCloud(memoId);
+  }, cloudSyncState.SYNC_DELAY);
+
+  console.log('[CloudSync] Scheduled upload for memo:', memoId);
+}
+
+// 즉시 클라우드 업로드 (메모 전환, 앱 종료 시)
+export async function flushCloudSync() {
+  if (!cloudSyncState.enabled) return;
+
+  // 타이머 취소
+  if (cloudSyncState.syncTimer) {
+    clearTimeout(cloudSyncState.syncTimer);
+    cloudSyncState.syncTimer = null;
+  }
+
+  // 대기 중인 메모가 있으면 즉시 업로드
+  if (cloudSyncState.pendingMemoId) {
+    await uploadToCloud(cloudSyncState.pendingMemoId);
+  }
+}
+
+// 실제 클라우드 업로드
+async function uploadToCloud(memoId) {
+  if (!cloudSyncState.enabled || cloudSyncState.isSyncing) return;
+
+  cloudSyncState.isSyncing = true;
+  cloudSyncState.pendingMemoId = null;
+
+  try {
+    console.log('[CloudSync] Uploading memo:', memoId);
+    const result = await window.api.cloudSyncMemo(memoId);
+
+    if (result?.success) {
+      console.log('[CloudSync] Upload success:', memoId);
+    } else {
+      console.error('[CloudSync] Upload failed:', result?.error);
+      // 실패 시 다시 예약 (재시도)
+      // TODO: 오프라인 큐에 추가
+    }
+  } catch (e) {
+    console.error('[CloudSync] Upload error:', e);
+  } finally {
+    cloudSyncState.isSyncing = false;
+  }
+}
+
+// 클라우드 동기화 상태 새로고침 (설정 변경 시 호출)
+export async function refreshCloudSyncState() {
+  await initCloudSyncState();
+}
+
+// ===== 네트워크 상태 감지 =====
+
+// 온라인 복귀 시 대기 중인 동기화 처리
+window.addEventListener('online', async () => {
+  console.log('[CloudSync] Network restored');
+  if (cloudSyncState.enabled && cloudSyncState.pendingMemoId) {
+    // 대기 중인 업로드 재시도
+    await uploadToCloud(cloudSyncState.pendingMemoId);
+  }
+});
+
+// 오프라인 상태 로깅
+window.addEventListener('offline', () => {
+  console.log('[CloudSync] Network lost - changes will be synced when online');
+});
 
 // ===== 동기화 상태 UI (로컬-퍼스트) =====
 
