@@ -101,21 +101,30 @@ function getAutoLaunchEnabled() {
 }
 
 function setAutoLaunch(enabled) {
-  app.setLoginItemSettings({
-    openAtLogin: enabled,
-    openAsHidden: true, // 백그라운드로 시작
-  });
+  // 현재 상태와 비교하여 변경이 필요할 때만 설정 (팝업 방지)
+  const current = app.getLoginItemSettings().openAtLogin;
+
+  if (current !== enabled) {
+    app.setLoginItemSettings({
+      openAtLogin: enabled,
+      openAsHidden: true, // 백그라운드로 시작
+    });
+  }
+
   config.autoLaunch = enabled;
   saveConfig(config);
 }
 
-// 앱 시작 시 자동 실행 설정 적용
+// 앱 시작 시 자동 실행 설정 확인 (설정하지 않고 읽기만)
 function initAutoLaunch() {
   const enabled = getAutoLaunchEnabled();
-  app.setLoginItemSettings({
-    openAtLogin: enabled,
-    openAsHidden: true,
-  });
+  const current = app.getLoginItemSettings().openAtLogin;
+
+  // OS 상태와 config가 다르면 config를 OS 상태로 동기화
+  if (current !== enabled) {
+    config.autoLaunch = current;
+    saveConfig(config);
+  }
 }
 
 // ===== Notification Settings =====
