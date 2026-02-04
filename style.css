@@ -14,6 +14,8 @@
 
 :root {
   color-scheme: light dark;
+  --bg-color: #ffffff;
+  --text-color: #1a1a1a;
   --pin-color: #666;
   --pin-hover: #333;
   --pin-active: #1a1a1a;
@@ -30,6 +32,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --bg-color: #121212;
+    --text-color: #e5e5e5;
     --pin-color: #aaa;
     --pin-hover: #ddd;
     --pin-active: #fff;
@@ -2473,4 +2477,35 @@ html, body {
       background: rgba(255, 180, 0, 0.35);
     }
   }
+}
+
+/* ===== 도움말 오버레이 ===== */
+#help-overlay {
+  position: absolute;
+  top: 45px;
+  left: 20px;
+  right: 10px;
+  bottom: 10px;
+  padding-top: 20px;
+  padding-right: 14px;
+  background: var(--bg-color);
+  z-index: 100;
+  overflow-y: auto;
+  transition: left 0.2s ease;
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-color);
+}
+
+#help-overlay.hidden {
+  display: none;
+}
+
+#help-overlay b {
+  font-weight: 600;
+}
+
+#help-text b {
+  font-weight: 600;
 }

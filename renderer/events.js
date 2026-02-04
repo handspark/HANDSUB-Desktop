@@ -301,6 +301,25 @@ export function initButtonEvents() {
   settingsBtn.addEventListener('click', () => {
     window.api.openSettings();
   });
+
+  // 도움말 오버레이 토글
+  const helpOverlay = document.getElementById('help-overlay');
+
+  helpBtn.addEventListener('click', () => {
+    helpOverlay.classList.toggle('hidden');
+  });
+
+  // ESC 또는 도움말 영역 클릭으로 닫기
+  helpOverlay.addEventListener('click', () => {
+    helpOverlay.classList.add('hidden');
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !helpOverlay.classList.contains('hidden')) {
+      helpOverlay.classList.add('hidden');
+      e.stopPropagation();
+    }
+  });
 }
 
 // ===== 앱 이벤트 =====
