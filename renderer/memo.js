@@ -18,6 +18,7 @@ const cloudSyncState = {
   pendingMemoId: null,      // 업로드 대기 중인 메모 ID
   isSyncing: false,         // 현재 업로드 중인지
   SYNC_DELAY: 15000,        // 15초
+  rateLimitedUntil: 0,      // rate limit 해제 시간 (timestamp)
 };
 
 // 클라우드 동기화 상태 초기화
@@ -464,6 +465,14 @@ export async function flushCloudSync() {
 async function uploadToCloud(memoId) {
   if (!cloudSyncState.enabled || cloudSyncState.isSyncing) return;
 
+  // rate limit 체크 (60초 대기)
+  if (Date.now() < cloudSyncState.rateLimitedUntil) {
+    console.log('[CloudSync] Rate limited, skipping upload');
+    // 대기 중인 메모로 기록해두고 나중에 재시도
+    cloudSyncState.pendingMemoId = memoId;
+    return;
+  }
+
   cloudSyncState.isSyncing = true;
   cloudSyncState.pendingMemoId = null;
 
@@ -475,8 +484,12 @@ async function uploadToCloud(memoId) {
       console.log('[CloudSync] Upload success:', memoId);
     } else {
       console.error('[CloudSync] Upload failed:', result?.error);
-      // 실패 시 다시 예약 (재시도)
-      // TODO: 오프라인 큐에 추가
+      // 429 에러 시 60초 대기
+      if (result?.error?.includes('Too many') || result?.error?.includes('429')) {
+        cloudSyncState.rateLimitedUntil = Date.now() + 60000;
+        cloudSyncState.pendingMemoId = memoId; // 나중에 재시도
+        console.log('[CloudSync] Rate limited for 60 seconds');
+      }
     }
   } catch (e) {
     console.error('[CloudSync] Upload error:', e);

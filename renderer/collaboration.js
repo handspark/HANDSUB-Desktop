@@ -601,6 +601,9 @@ export function handleParticipantLeave(userId, userName) {
 // 메모별 협업자 캐시 (온라인 여부 상관없이)
 const collaboratorsCache = new Map();
 
+// API rate limit 상태 (전역)
+let apiRateLimitedUntil = 0;
+
 // 경쟁 조건 방지를 위한 버전 관리
 let updateVersion = 0;
 let updateDebounceTimer = null;
@@ -715,6 +718,12 @@ async function fetchCollaborators(memoUuid) {
     return collaboratorsCache.get(memoUuid);
   }
 
+  // rate limit 체크
+  if (Date.now() < apiRateLimitedUntil) {
+    console.log('[Collab] Rate limited, using cache or empty');
+    return [];
+  }
+
   try {
     const token = await window.api.authGetToken();
     if (!token) return [];
@@ -730,6 +739,13 @@ async function fetchCollaborators(memoUuid) {
       },
       body: JSON.stringify({ memoUuid, title: '' })
     });
+
+    // 429 에러 처리
+    if (sessionRes.status === 429) {
+      apiRateLimitedUntil = Date.now() + 60000; // 60초 대기
+      console.log('[Collab] Rate limited for 60 seconds');
+      return [];
+    }
 
     if (!sessionRes.ok) return [];
 

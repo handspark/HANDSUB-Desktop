@@ -783,6 +783,8 @@ async function sendMemoByEmail(email) {
         if (sessionRes.ok) {
           const sessionData = await sessionRes.json();
           sharePopupSessionId = sessionData.sessionId;
+        } else if (sessionRes.status === 429) {
+          throw new Error('요청이 너무 많습니다. 잠시 후 다시 시도해주세요.');
         } else {
           throw new Error('세션 생성 실패');
         }
@@ -814,6 +816,9 @@ async function sendMemoByEmail(email) {
       // 입력 필드 초기화
       const emailInput = document.getElementById('share-email-input');
       if (emailInput) emailInput.value = '';
+    } else if (inviteRes.status === 429) {
+      status.className = 'share-status error';
+      status.textContent = '잠시 후 다시 시도해주세요';
     } else {
       const error = await inviteRes.json();
       status.className = 'share-status error';
@@ -828,7 +833,7 @@ async function sendMemoByEmail(email) {
   } catch (e) {
     console.error('[Share] Invite error:', e);
     status.className = 'share-status error';
-    status.textContent = '초대 중 오류 발생';
+    status.textContent = e.message || '초대 중 오류 발생';
   } finally {
     sendBtn.disabled = false;
   }
@@ -1021,6 +1026,12 @@ async function renderMembersTab() {
         })
       });
 
+      if (sessionRes.status === 429) {
+        // rate limit - 잠시 후 다시 시도
+        listContainer.innerHTML = '<div class="share-members-empty">잠시 후 다시 시도해주세요</div>';
+        return;
+      }
+
       if (sessionRes.ok) {
         const sessionData = await sessionRes.json();
         sharePopupSessionId = sessionData.sessionId;
@@ -1030,6 +1041,11 @@ async function renderMembersTab() {
         const detailRes = await fetch(`${syncServer}/api/v2/collab/session/${sharePopupSessionId}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
+
+        if (detailRes.status === 429) {
+          listContainer.innerHTML = '<div class="share-members-empty">잠시 후 다시 시도해주세요</div>';
+          return;
+        }
 
         if (detailRes.ok) {
           const detail = await detailRes.json();
