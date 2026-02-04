@@ -15,7 +15,9 @@ export const elements = {
   memoList: document.getElementById('memo-list'),
   sidebarResize: document.getElementById('sidebar-resize'),
   searchInput: document.getElementById('search-input'),
-  linkPreviewsContainer: document.getElementById('link-previews')
+  linkPreviewsContainer: document.getElementById('link-previews'),
+  settingsBtn: document.getElementById('settingsBtn'),
+  helpBtn: document.getElementById('helpBtn')
 };
 
 // ===== 메모 상태 =====

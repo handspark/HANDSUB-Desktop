@@ -2161,6 +2161,10 @@ function updateTrayMenu() {
   tray.setContextMenu(contextMenu);
 }
 
+ipcMain.on('open-settings', () => {
+  createSettingsWindow();
+});
+
 ipcMain.on('close-settings', () => {
   if (settingsWin) {
     settingsWin.close();

@@ -134,6 +134,7 @@ contextBridge.exposeInMainWorld('api', {
   // ===== Settings Sync API =====
   syncSettingsPull: () => ipcRenderer.invoke('settings-sync-pull'),
   syncSettingsPush: (key, value) => ipcRenderer.invoke('settings-sync-push', key, value),
+  openSettings: () => ipcRenderer.send('open-settings'),
 
   // ===== Snippets Sync API =====
   syncSnippets: () => ipcRenderer.invoke('snippets-sync'),

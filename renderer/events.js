@@ -10,7 +10,7 @@ import { toggleSidebar, renderMemoList, setLoadMemoFn, updateEditorPosition } fr
 import { handleImagePaste, handleVideoPaste, initMediaEvents } from './media.js';
 import { handleEnterKey, handleEscKey, checkSnippetTrigger } from './snippet.js';
 
-const { editor, newBtn, closeBtn, listBtn, sidebar, searchInput, memoList } = elements;
+const { editor, newBtn, closeBtn, listBtn, sidebar, searchInput, memoList, settingsBtn, helpBtn } = elements;
 
 // ===== 커서 위치로 스크롤 =====
 
@@ -296,6 +296,10 @@ export function initButtonEvents() {
   closeBtn.addEventListener('click', async () => {
     await cleanupOnClose();
     window.api.forceClose();
+  });
+
+  settingsBtn.addEventListener('click', () => {
+    window.api.openSettings();
   });
 }
 
