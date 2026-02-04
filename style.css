@@ -533,8 +533,22 @@ html, body {
   color: var(--memo-title-color);
 }
 
-#listBtn.active svg {
-  fill: var(--pin-active);
+/* listBtn 아이콘 전환 */
+#listBtn .icon-close {
+  display: none;
+}
+
+#listBtn.active .icon-menu {
+  display: none;
+}
+
+#listBtn.active .icon-close {
+  display: block;
+  fill: var(--pin-color);
+}
+
+#listBtn.active:hover .icon-close {
+  fill: var(--pin-hover);
 }
 
 /* ===== Contenteditable Editor ===== */
@@ -1625,7 +1639,7 @@ html, body {
 
 /* ===== Collaboration - Participants (겹치는 프로필) ===== */
 #collab-participants {
-  display: flex;
+  display: none; /* 공유 팝업에서 확인 가능하므로 숨김 */
   align-items: center;
   position: fixed;
   bottom: 12px;
