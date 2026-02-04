@@ -411,8 +411,9 @@ export async function cleanupOnClose() {
       await saveCurrentContent();
     }
 
-    // 앱 종료 전 클라우드 동기화 즉시 실행
-    await flushCloudSync();
+    // 클라우드 동기화는 main process의 SyncManager가 백그라운드에서 처리
+    // 창 닫기를 지연시키지 않도록 await하지 않음
+    flushCloudSync();
   } catch (e) {
     console.error('Cleanup error:', e);
   }
