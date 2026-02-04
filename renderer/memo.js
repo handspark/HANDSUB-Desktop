@@ -76,12 +76,7 @@ export function updateStatusbar(time) {
   if (titlebarDate) {
     titlebarDate.textContent = dateText;
   }
-
-  // 프로필은 collab-participants에서 통합 관리 (collaboration.js)
-  // 협업 중이 아니어도 내 프로필 표시하도록 updateParticipantsList 호출
-  if (window.updateCollabParticipants) {
-    window.updateCollabParticipants();
-  }
+  // 협업자 프로필은 공유 버튼 클릭 시에만 확인 (rate limit 방지)
 }
 
 export function formatDate(time) {

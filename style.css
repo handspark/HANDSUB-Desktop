@@ -100,8 +100,8 @@ html, body {
 
 .titlebar-left button,
 .titlebar-right button {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border: none;
   background: transparent;
   cursor: pointer;

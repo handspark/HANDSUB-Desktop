@@ -1456,7 +1456,10 @@ function initAddFriendButton() {
   addFriendBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     if (memoState.currentMemo && window.openSharePopupFromStatusbar) {
+      // 팝업을 먼저 열고 (팝업 내에서 스켈레톤 로딩 표시됨)
       window.openSharePopupFromStatusbar(memoState.currentMemo, addFriendBtn);
+      // 상태바 협업자 프로필은 비동기로 갱신
+      updateParticipantsList();
     }
   });
 }
