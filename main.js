@@ -541,6 +541,44 @@ try {
   // 이미 존재하면 무시
 }
 
+// ===== 기존 메모 시간 마이그레이션 (DATETIME → Unix timestamp) =====
+function migrateTimestamps() {
+  try {
+    // 문자열 형식의 시간을 가진 메모 찾기 (숫자가 아닌 경우)
+    const memos = db.prepare(`
+      SELECT id, created_at, updated_at FROM memos
+      WHERE typeof(created_at) = 'text' OR typeof(updated_at) = 'text'
+    `).all();
+
+    if (memos.length === 0) return;
+
+    console.log('[Timestamp Migration] Converting', memos.length, 'memos to Unix timestamp...');
+
+    const updateStmt = db.prepare(`
+      UPDATE memos SET created_at = ?, updated_at = ? WHERE id = ?
+    `);
+
+    for (const memo of memos) {
+      const createdAt = typeof memo.created_at === 'string'
+        ? new Date(memo.created_at + (memo.created_at.includes('Z') || memo.created_at.includes('+') ? '' : 'Z')).getTime()
+        : memo.created_at;
+      const updatedAt = typeof memo.updated_at === 'string'
+        ? new Date(memo.updated_at + (memo.updated_at.includes('Z') || memo.updated_at.includes('+') ? '' : 'Z')).getTime()
+        : memo.updated_at;
+
+      // NaN 체크
+      if (!isNaN(createdAt) && !isNaN(updatedAt)) {
+        updateStmt.run(createdAt, updatedAt, memo.id);
+      }
+    }
+
+    console.log('[Timestamp Migration] Done.');
+  } catch (e) {
+    console.error('[Timestamp Migration] Error:', e.message);
+  }
+}
+migrateTimestamps();
+
 // ===== 기존 메모 체크박스 마이그레이션 (todo_tracking) =====
 function migrateExistingTodos() {
   console.log('[Todo Migration] Function called');
@@ -661,14 +699,15 @@ ipcMain.handle('memo-get', (_, id) => {
 
 ipcMain.handle('memo-create', () => {
   const uuid = crypto.randomUUID();
+  const now = Date.now();
   // 로컬 메모 생성 (user_id는 협업 시 서버에서 조합)
-  const result = db.prepare("INSERT INTO memos (content, uuid) VALUES ('', ?)").run(uuid);
+  const result = db.prepare("INSERT INTO memos (content, uuid, created_at, updated_at) VALUES ('', ?, ?, ?)").run(uuid, now, now);
   return {
     id: result.lastInsertRowid,
     uuid: uuid,
     content: '',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
+    created_at: now,
+    updated_at: now
   };
 });
 
@@ -681,7 +720,7 @@ ipcMain.handle('memo-update', (event, id, content) => {
   db.prepare(`
     UPDATE memos
     SET content = ?,
-        updated_at = CURRENT_TIMESTAMP,
+        updated_at = ?,
         local_updated_at = ?,
         sync_status = CASE
           WHEN sync_status = 'synced' THEN 'pending'
@@ -689,7 +728,7 @@ ipcMain.handle('memo-update', (event, id, content) => {
           ELSE sync_status
         END
     WHERE id = ?
-  `).run(content, now, id);
+  `).run(content, now, now, id);
 
   // Pro 사용자면 동기화 큐에 추가
   if (isPro()) {
